@@ -181,14 +181,12 @@ main(int argc, char** argv)
     (solver->*solverFunc)(addBranchFunc);
     solveTimer.stop();
 
-    if (dumpNodes) {
-	solver->dumpNodes(dout);
-    }
-
     // convert to flow
     Timer convertTimer;
     convertTimer.start();
-    solver->convertToFlow();
+    if (!dumpNodes) {
+	solver->convertToFlow();
+    }
     convertTimer.stop();
 
     totalTimer.stop();
@@ -209,7 +207,10 @@ main(int argc, char** argv)
 
     solver->writeStats(dout);
 
-    if (writeFlow) {
+    if (dumpNodes) {
+	solver->dumpNodes(dout);
+	solver->writeDimacsFlow(dout);
+    } else if (writeFlow) {
 	solver->writeDimacsFlow(dout);
     }
 
