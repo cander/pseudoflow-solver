@@ -84,12 +84,15 @@ The parent edge is [[nil]] if the node is a root.
 <<Node methods>>=
     EdgePtr	getParentEdge() const;
     NodePtr	getParentNode();
+    Boolean	isRootNode() const;
 <<Node inline implementations>>=
 INLINE EdgePtr Node::getParentEdge() const
 { return parentEdge; }
 INLINE NodePtr Node::getParentNode() 
 { return (parentEdge != nil) ? parentEdge->getOtherNode(this) : nil; }
-@ %def getParentEdge getParentNode
+INLINE Boolean Node::isRootNode() const
+{ return (parentEdge == nil) ? TRUE : FALSE; }
+@ %def getParentEdge getParentNode isRootNode
 Adding a child is a more involved process than adding a neighbor
 because we have to update the parent edge.  We begin by adding
 the child to the parent's list of children.  
@@ -105,11 +108,7 @@ void Node::addChild(NodePtr child, Edge& edge)
     edge.setDirectionTo(this);
     child->parentEdge = &edge;
 }
-
-
-<<Node method implementations>>=
-<<debugging functions>>=
-@
+@ %def addChild
 We need a default constructor because we will be creating an
 array of nodes in bulk when we know how many of them are
 in the graph.
@@ -133,7 +132,98 @@ void Node::init(NodeId id, int numNeighbors)
     neighbors.init(numNeighbors);
     children.init(numNeighbors + 3);
 }
+@ init
+To aid in debugging the tree and graph manipulation functions,
+we have some functions that we can use to print and check the
+data structures.
+<<debugging functions>>=
+    public: void printTree(int level);
+<<Node method implementations>>=
+void Node::printTree(int level)
+{
+    if (level == 0) {
+	cout << " Node id  address   level   label  parent  excess" << endl;
+    }
 
+    cout << setw(8) << id << "   "
+         << setw(8) << this
+	 << setw(8) << level
+	 << setw(8) << label;
+
+    cout << setw(8);
+    if (isRootNode()) {
+	cout << "NULL";
+    } else {
+	cout << getParentNode()->id;
+    }
+
+    cout << setw(8) << excess << endl;
+
+    // examine children
+    int numChildren = children.getSize();
+    int childLevel = level + 1;
+    for (int i = 0; i < numChildren; i++) {
+	NodePtr child = children.getElement(i);
+	if (child != nil) {
+	    child->printTree(childLevel);
+	}
+    }
+}
+@ %def printTree
+Here's a 'C' version of the function that we can call from {\em gdb}.
+void printTree(Node* n)
+{
+    n->printTree(0);
+}
+@
+Sometimes, we also need to check the consistency of the tree,
+especially after operations like rehanging the tree.
+<<debugging functions>>=
+    Boolean checkTree(Node* expectedParent);
+<<Node method implementations>>=
+Boolean Node::checkTree(Node* expectedParent)
+{
+    Boolean treeOK = TRUE;
+    <<check parent pointers>>
+
+    if (treeOK) {
+	<<check child pointers>>
+    }
+
+    return treeOK;
+}
+@
+Explain this.
+<<check parent pointers>>=
+    if (expectedParent != nil) {
+	Node* foundParent = getParentNode();
+	if (foundParent != expectedParent) {
+	    cout << "Error: node " << id << " parent pointer wrong. "
+	         << " expected " << expectedParent->id 
+		 << " found " << foundParent->id << endl;
+	    treeOK = FALSE;
+	}
+	Node* self = getParentEdge()->getOtherNode(foundParent);
+	if (self != this) {
+	    cout << "Error: node " << id << " parent back pointer wrong. "
+	         << " expected (this) " << id 
+		 << " found (parent other) " << self->id << endl;
+	    treeOK = FALSE;
+	}
+    }
+@
+Explain this too.
+<<check child pointers>>=
+    int numChildren = children.getSize();
+    for (int i = 0; i < numChildren; i++) {
+	NodePtr child = children.getElement(i);
+	if (child != nil) {
+	    treeOK = child->checkTree(this);
+	    if (treeOK == FALSE) {
+		break;
+	    }
+	}
+    }
 @
 \subsubsection{File Boiler Plate}
 We start with the boiler-plate implementation file. 
