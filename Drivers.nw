@@ -1,0 +1,579 @@
+\section{Driver Programs}
+The driver programs for the parametric and non-parametric solvers
+are very similar.  So, we have combined them here via [[noweb]] to reduce
+the duplication of code.
+\subsection{Non-parametric Solver}
+<<llps>>=
+#include "PhaseSolver.h"
+<<Timer declaration and implementation>>
+
+#include <iostream.h>
+#include <fstream.h>
+#include <time.h>
+#include <stdlib.h>
+#ifdef NEED_GETOPT
+#include <getopt.h>
+#endif /*NEED_GETOPT*/
+
+extern char* buildFlags;
+
+// set to TRUE to cause (time consuming) tree checks to take place
+Boolean checkTree = FALSE;
+// set to TRUE to print verbose tracing messages
+Boolean tracingEnabled = FALSE;
+
+void 
+usage()
+{
+    cerr << "Usage: llps [-d] [-f] [-t] [-x] [-g freq][-I init] [-N norm] [-B branch] input-graph flow-output" << endl;
+    <<common option usage>>
+    cerr << "buildFlags: " << buildFlags << endl;
+}
+
+int 
+main(int argc, char** argv)
+{
+    Boolean dumpNodes = FALSE;
+    Boolean writeFlow = FALSE;
+    void (PhaseSolver::* initFunc)(LabelMethod) = &PhaseSolver::buildSimpleTree;
+    void (PhaseSolver::* solverFunc)(AddBranchPtr) = &PhaseSolver::solve;
+    AddBranchPtr addBranchFunc = &PhaseSolver::addBranchLifo;
+    PhaseSolver* solver = new PhaseSolver();
+    int numSplits = -1;
+    Boolean postOrder = FALSE;
+    float relabelFreq = 0.0;
+    LabelMethod labelMethod = LABELS_CONSTANT;
+
+    // parse arguments
+    int ch;
+    while ((ch = getopt(argc, argv, "dfg:txI:s:M:N:B:O:L:")) != EOF) {
+	switch (ch) {
+	<<common option parsing>>
+	default:
+	    usage();
+	    return 1;
+	}
+    }
+
+    argc -= optind;
+    //argv += optind;
+    
+    if (argc != 2) {
+	usage();
+	return 1;
+    }
+
+    const char* instanceName = argv[optind];
+    const char* outputName = argv[optind + 1];
+
+    ofstream dout(outputName, ios::out);
+    if (dout == nil) {
+	cerr << "Unable to open output file: " << outputName << endl;
+	return 1;
+    }
+
+    extern char* buildDate;
+    dout << "c" << endl;
+    dout << "c  instance: " << instanceName << endl;
+    dout << "c  buildFlags: " << buildFlags << endl;
+    dout << "c  buildDate: " << buildDate << endl;
+    dout << "c  argv: ";
+    for (char** ap = argv; *ap != nil; ap++) {
+	dout << *ap << " ";
+    }
+    dout << endl;
+
+    if (numSplits >= 0) {
+	solver->maxSplits = numSplits;
+    }
+    if (relabelFreq >= 0.0) {
+	solver->relabelFrequency = relabelFreq;
+    }
+    solver->postOrderSearch = postOrder;
+
+    time_t beginTime = time(0);
+    Timer readTimer;
+    readTimer.start();
+    Boolean readOK =  solver->readDimacsInstance(instanceName);
+    readTimer.stop();
+
+    if (readOK == FALSE) {
+	dout << "c  CANNOT READ INSTANCE" << endl;
+	return 1;
+    }
+
+    cout << "read problem instance OK" << endl;
+
+    Timer totalTimer;
+    totalTimer.start();			// total time is everything except I/O
+
+    // build initial tree
+    Timer treeTimer;
+    Timer solveTimer;
+    treeTimer.start();
+    solveTimer.start();			// tree time is part of solve
+    (solver->*initFunc)(labelMethod);
+    treeTimer.stop();
+
+    // solve
+    (solver->*solverFunc)(addBranchFunc);
+    solveTimer.stop();
+
+    // convert to flow
+    Timer convertTimer;
+    convertTimer.start();
+    if (!dumpNodes) {
+	// don't convert to flow if we're dumping the nodes,
+	// which only makes sense after phase I before conversion
+	solver->convertToFlow();
+    }
+    convertTimer.stop();
+
+    totalTimer.stop();
+
+    cout << "time to readInstance: "	<< readTimer << endl;
+    cout << "time to establish tree: "	<< treeTimer << endl;
+    cout << "done solving: "		<< solveTimer << endl;
+    cout << "time to convert flow: "	<< convertTimer << endl;
+    cout << "total time: "		<< totalTimer << endl;
+
+    time_t endTime = time(0);
+    dout << "c  beginRun: "		<< ctime(&beginTime);
+    dout << "c  endRun: "		<< ctime(&endTime);
+
+    dout << "c  timeToRead: "		<< readTimer << endl;
+    dout << "c  timeToInitialize: "	<< treeTimer << endl;
+    dout << "c  timeToSolve: "		<< solveTimer << endl;
+    dout << "c  timeToFlow: "		<< convertTimer << endl;
+    dout << "c  totalTime: "		<< totalTimer << endl;
+
+    solver->writeStats(dout);
+
+    if (dumpNodes) {
+	solver->dumpNodes(dout);
+	solver->writeDimacsFlow(dout);
+    } else if (writeFlow) {
+	solver->writeDimacsFlow(dout);
+    }
+
+    dout.close();
+
+    return 0;
+}
+<<common option usage>>=
+    cerr << "\t -d   dump the final disposition of each node" << endl;
+    cerr << "\t -f   write the flow values for each arc" << endl;
+    cerr << "\t -g   specify the global relabel frequency" << endl;
+    cerr << "\t -t   perform checkTree operations frequently" << endl;
+    cerr << "\t -x   perform verbose tracing of operations" << endl;
+    cerr << "\t -I   initialization function: simple, path, saturate, greedy " << endl;
+    cerr << "\t -s   specify the number of splits for path init" << endl;
+    cerr << "\t -B   strong bucket management: fifo, lifo, wave" << endl;
+    cerr << "\t -M   merger function: pseudo, simplex" << endl;
+    cerr << "\t -N   normalization method: immed, delayed" << endl;
+    cerr << "\t -O   search order: pre, post" << endl;
+    cerr << "\t -L   inital node labels: const sink deficit" << endl;
+<<common option parsing>>=
+	case 'd':
+	    dumpNodes = TRUE;
+	    break;
+	case 'f':
+	    writeFlow = TRUE;
+	    break;
+	case 'g':
+	    relabelFreq = atof(optarg);
+	    break;
+	case 't':
+	    checkTree = TRUE;
+	    break;
+	case 'x':
+	    tracingEnabled = TRUE;
+	    break;
+<<common option parsing>>=
+	case 'I':
+	    if (strcmp(optarg, "simple") == 0) {
+		initFunc = &PhaseSolver::buildSimpleTree;
+	    } else if (strcmp(optarg, "path") == 0) {
+		initFunc = &PhaseSolver::buildBlockingPathTree;
+	    } else if (strcmp(optarg, "saturate") == 0) {
+		initFunc = &PhaseSolver::saturateAllArcs;
+	    } else if (strcmp(optarg, "greedy") == 0) {
+		initFunc = &PhaseSolver::buildGreedyPathTree;
+		// should also support greedy:N where N is numSplits
+	    } else if (strcmp(optarg, "shortest") == 0) {
+		initFunc = &PhaseSolver::buildSpTree;
+	    } else {
+		cerr << "Invalid initialization option " << optarg << endl;
+		usage();
+		return 1;
+	    }
+	    break;
+<<common option parsing>>=
+	case 's':
+	    numSplits = atoi(optarg);
+	    break;
+<<common option parsing>>=
+	case 'M':
+	    if (strcmp(optarg, "simplex") == 0) {
+		solver = new SimplexSolver();
+	    } else if (strcmp(optarg, "pseudo") == 0) {
+		solver = new PhaseSolver();
+	    } else {
+		cerr << "Invalid merge function option " << optarg << endl;
+		usage();
+		return 1;
+	    }
+	    break;
+<<common option parsing>>=
+	case 'N':
+	    if (strcmp(optarg, "delayed") == 0) {
+		solverFunc = &PhaseSolver::delayedNormalizeSolve;
+	    } else if (strcmp(optarg, "highest") == 0) {
+		solverFunc = &PhaseSolver::highestLabelSolve;
+	    } else if (strcmp(optarg, "immed") == 0) {
+		solverFunc = &PhaseSolver::solve;
+	    } else {
+		cerr << "Invalid normalization option " << optarg << endl;
+		usage();
+		return 1;
+	    }
+	    break;
+<<common option parsing>>=
+	case 'B':
+	    if (strcmp(optarg, "fifo") == 0) {
+		addBranchFunc = &PhaseSolver::addBranchFifo;
+	    } else if (strcmp(optarg, "lifo") == 0) {
+		addBranchFunc = &PhaseSolver::addBranchLifo;
+	    } else if (strcmp(optarg, "wave") == 0) {
+		addBranchFunc = &PhaseSolver::addBranchWave;
+	    } else {
+		cerr << "Invalid branch-management option " << optarg << endl;
+		usage();
+		return 1;
+	    }
+	    break;
+<<common option parsing>>=
+	case 'O':
+	    if (strcmp(optarg, "post") == 0) {
+		postOrder = TRUE;
+	    } else if (strcmp(optarg, "pre") == 0) {
+		postOrder = FALSE;
+	    } else {
+		cerr << "Invalid pre/post order option " << optarg << endl;
+		usage();
+		return 1;
+	    }
+	    break;
+<<common option parsing>>=
+	case 'L':
+	    if (strcmp(optarg, "const") == 0) {
+		labelMethod = LABELS_CONSTANT;
+	    } else if (strcmp(optarg, "sink") == 0) {
+		labelMethod = LABELS_SINK_DIST;
+	    } else if (strcmp(optarg, "deficit") == 0) {
+		labelMethod = LABELS_DEFICIT_DIST;
+	    } else {
+		cerr << "Invalid initial labeling option " << optarg << endl;
+		usage();
+		return 1;
+	    }
+	    break;
+@
+\subsection{Parametric Solver}
+<<pllps>>=
+#include "PhaseSolver.h"
+<<Timer declaration and implementation>>
+
+#include <iostream.h>
+#include <fstream.h>
+#include <time.h>
+#include <stdlib.h>
+#include <string.h>
+#ifdef NEED_GETOPT
+#include <getopt.h>
+#endif /*NEED_GETOPT*/
+
+// set to TRUE to cause (time consuming) tree checks to take place
+Boolean checkTree = FALSE;
+// set to TRUE to print verbose tracing messages
+Boolean tracingEnabled = FALSE;
+
+void 
+usage()
+{
+    cerr << "Usage: pllps [-x] [-g freq] [-t] [-d] [-f] -V lam1,lam2,... [-I init] [-N norm] [-B branch] input-graph flow-output" << endl;
+    <<common option usage>>
+    cerr << "\t -V   specify values for lambda" << endl;
+}
+
+double*
+getLambdas(int& numLambdas, char* str)
+{
+    // figure out how many elements - find each comma and replace
+    // it with a null.
+    int numCommas = 0;
+    char* curr = index(str, ',');
+    while (curr != nil) {
+	numCommas++;
+	*curr = '\0';
+	curr++;
+	curr = index(curr, ',');
+    }
+    numLambdas = numCommas + 1;
+    double* result = new double[numLambdas];
+
+    // parse each element with atof
+    curr = str;
+    for (int i = 0; i < numLambdas; i++) {
+	result[i] = atof(curr);
+	curr += strlen(curr) + 1;
+    }
+
+    return result;
+}
+
+int 
+main(int argc, char** argv)
+{
+    Boolean dumpNodes = FALSE;
+    Boolean writeFlow = FALSE;
+    void (PhaseSolver::* initFunc)(LabelMethod) = &PhaseSolver::buildSimpleTree;
+    void (PhaseSolver::* solverFunc)(AddBranchPtr) = &PhaseSolver::solve;
+    AddBranchPtr addBranchFunc = &PhaseSolver::addBranchLifo;
+    PhaseSolver* solver = new PhaseSolver();
+    int numSplits = -1;
+    Boolean postOrder = FALSE;
+    double* lambdaValues = nil;
+    int numLambdas = 0;
+    float relabelFreq = 0.0;
+    LabelMethod labelMethod = LABELS_CONSTANT;
+
+    // parse arguments
+    int ch;
+    while ((ch = getopt(argc, argv, "dfg:txV:L:I:s:M:N:B:O:")) != EOF) {
+	switch (ch) {
+	<<common option parsing>>
+	case 'V':
+	    lambdaValues = getLambdas(numLambdas, optarg);
+	    break;
+	default:
+	    usage();
+	    return 1;
+	}
+    }
+
+    argc -= optind;
+    //argv += optind;
+    
+    if ((argc != 2) || (numLambdas < 1)) {
+	usage();
+	assert(0);
+	return 1;
+    }
+
+    const char* instanceName = argv[optind];
+    const char* outputName = argv[optind + 1];
+
+    ofstream dout(outputName, ios::out);
+    if (dout == nil) {
+	cerr << "Unable to open output file: " << outputName << endl;
+	return 1;
+    }
+
+    extern char* buildFlags;
+    extern char* buildDate;
+    dout << "c" << endl;
+    dout << "c  instance: " << instanceName << endl;
+    dout << "c  buildFlags: " << buildFlags << endl;
+    dout << "c  buildDate: " << buildDate << endl;
+    dout << "c  argv: ";
+    for (char** ap = argv; *ap != nil; ap++) {
+	dout << *ap << " ";
+    }
+    dout << endl;
+
+    if (numSplits >= 0) {
+	solver->maxSplits = numSplits;
+    }
+    if (relabelFreq >= 0.0) {
+	solver->relabelFrequency = relabelFreq;
+    }
+    solver->postOrderSearch = postOrder;
+
+
+    time_t beginTime = time(0);
+    Timer initTimer;
+    initTimer.start();
+    Boolean readOK =  solver->readDimacsInstance(instanceName);
+    initTimer.stop();
+
+    if (readOK == FALSE) {
+	dout << "c  CANNOT READ INSTANCE" << endl;
+	return 1;
+    }
+
+    cout << "read problem instance OK" << endl;
+    Timer totalTimer;
+    totalTimer.start();
+
+    solver->setInitialCapacity(lambdaValues[0]);
+    // build initial tree
+    Timer treeTimer;
+    treeTimer.start();
+    (solver->*initFunc)(labelMethod);
+    treeTimer.stop();
+
+    // solve
+    Timer solveTimer;
+    solveTimer.start();
+    Timer* lambdaTimers = new Timer[numLambdas];
+
+    for (int i = 0; i < numLambdas; i++) {
+	lambdaTimers[i].start();
+	if (i > 0) {
+	    solver->setNextCapacityParameter(lambdaValues[i-1], lambdaValues[i]);
+	}
+
+	(solver->*solverFunc)(addBranchFunc);
+	lambdaTimers[i].stop();
+    }
+
+    solveTimer.stop();
+
+    // convert to flow
+    Timer convertTimer;
+    convertTimer.start();
+    if (!dumpNodes) {
+	// don't convert to flow if we're dumping the nodes,
+	// which only makes sense after phase I before conversion
+	solver->convertToFlow();
+    }
+    convertTimer.stop();
+
+    totalTimer.stop();
+
+    cout << "time to readInstance: " << initTimer << endl;
+    cout << "time to establish tree: " << treeTimer << endl;
+    cout << "done solving: " << solveTimer << endl;
+    cout << "time to convert flow: " << convertTimer << endl;
+    cout << "total time: " << totalTimer << endl;
+    for (int i = 0; i < numLambdas; i++) {
+	cout << "lambda[" << i << "]: " << lambdaTimers[i] << endl;
+    }
+
+    time_t endTime = time(0);
+    dout << "c  beginRun: " << ctime(&beginTime);
+    dout << "c  endRun: " << ctime(&endTime);
+
+    dout << "c  timeToRead: " << initTimer << endl;
+    dout << "c  timeToInitialize: " << treeTimer << endl;
+    dout << "c  timeToSolve: " << solveTimer << endl;
+    dout << "c  timeToFlow: " << convertTimer << endl;
+    dout << "c  totalTime: " << totalTimer << endl;
+    for (int i = 0; i < numLambdas; i++) {
+	dout << "c  lambda[" << i << "]: " << lambdaTimers[i] << endl;
+    }
+
+    solver->writeStats(dout);
+
+    if (dumpNodes) {
+	solver->dumpNodes(dout);
+	solver->writeDimacsFlow(dout);
+    } else if (writeFlow) {
+	solver->writeDimacsFlow(dout);
+    }
+
+    dout.close();
+
+    return 0;
+}
+@
+\subsection{Timer}
+The Timer is used to store timing
+information during the running of an algorithm.  
+The operations that one performs are: start the timer,
+stop it, and get the times.  
+<<Timer functions>>=
+public:
+    void start();
+    void stop();
+    void getTimes(float& wall, float& user, float& sys) const;
+@
+We will store CPU times (user and system) and ellapsed wall
+clock time.  We need both the start and stop times for these.
+<<Timer data>>=
+private:
+    struct tms		startCpu;
+    clock_t		startWall;
+    struct tms		stopCpu;
+    clock_t		stopWall;
+@ %def startCpu startWall stopCpu stopWall    
+@
+To start or stop a timer, we use the [[times(2)]], at least
+on Unix.
+<<Timer implementation>>=
+void
+Timer::start()
+{
+    startWall = times(&startCpu);
+}
+void
+Timer::stop()
+{
+    stopWall = times(&stopCpu);
+}
+@ %def start stop
+To get the time difference between the start and stop times,
+we just perform subtraction.
+<<Timer implementation>>=
+void 
+Timer::getTimes(float& wall, float& user, float& sys) const
+{
+    wall = (stopWall - startWall) / (float)CLK_TCK;
+    user = (stopCpu.tms_utime - startCpu.tms_utime) / (float)CLK_TCK;
+    sys  = (stopCpu.tms_stime - startCpu.tms_stime) / (float)CLK_TCK;
+}
+@ %def getTimes
+We also want to implement an [[operator<<]], to print the
+times onto an output stream.
+<<C++ overhead>>=
+    friend ostream& operator<<(ostream& out, const Timer& timer);
+<<header include files>>=
+class ostream;
+<<Timer implementation>>=
+ostream&
+operator<<(ostream& out, const Timer& timer)
+{
+    float wall, user, sys;
+    timer.getTimes(wall, user, sys);
+    out << "[" << wall << " wall, " 
+	<< user << " user, "
+	<< sys << " sys]";
+    return out;
+}
+@
+Of course we need to construct and initialize timers.
+<<C++ overhead>>=
+public: Timer();
+<<Timer implementation>>=
+Timer::Timer()
+{
+    stopWall = startWall = 0;
+    stopCpu.tms_utime = startCpu.tms_utime = 0;
+    stopCpu.tms_stime = startCpu.tms_stime = 0;
+}
+
+@
+<<Timer declaration and implementation>>=
+#include <time.h>
+#include <sys/times.h>
+#include <iostream.h>
+class Timer
+{
+    <<Timer functions>>
+    <<Timer data>>
+    <<C++ overhead>>
+};
+@ %def Timer
+<<Timer declaration and implementation>>=
+<<Timer implementation>>
