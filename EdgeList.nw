@@ -89,7 +89,7 @@ the first non-hole or the end of the array.
 <<EdgeList inline implementations>>=
 void EdgeList::skipHoles()
 {
-    while ((array[currentIndex] == nil) && (currentIndex <= size)) {
+    while ((array[currentIndex] == nil) && (currentIndex < size)) {
 	currentIndex++;
     }
 }
@@ -102,7 +102,7 @@ tells us if there are any more non-hole elements in the list.
 INLINE Boolean EdgeList::hasMoreElements()
 {
     skipHoles();
-    return (currentIndex == size) ? TRUE : FALSE;
+    return (currentIndex < size) ? TRUE : FALSE;
 }
 @ %def hasMoreElements
 [[getCurrentElement]] returns the element at the current position.
