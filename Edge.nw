@@ -48,6 +48,19 @@ INLINE void Edge::setDirectionTo(NodePtr endpoint)
     isForward = (endpoint == dest) ? TRUE : FALSE;
 }
 @ %toggleOrientation setDirection
+Since the source and destination of the edge are fixed with regard to
+the original, forward orientation, we also need a way to get the
+current head and tail of the edge - i.e. with respect to the orientation,
+the edge goes from the tail to the head.
+<<Edge methods>>=
+    NodePtr getTail() const;
+    NodePtr getHead() const;
+<<Edge inline implementations>>=
+INLINE NodePtr Edge::getTail() const
+{ return (isForward == TRUE) ? source : dest; }
+INLINE NodePtr Edge::getHead() const
+{ return (isForward == TRUE) ? dest : source; }
+@ %getTail getHead
 Regardless of the orientation of the node, given one endpoint we
 want to be able to get the other node.
 <<Edge methods>>=
@@ -81,14 +94,31 @@ void Edge::init(Node* src, Node* dst, FlowAmount cap)
     isForward = TRUE;
 }
 @ %def init
-
-<<Edge header include files>>=
+We need a way to print the contents of an edge to an output stream,
+mostly for debugging.
 <<C++ overhead>>=
+    friend ostream& operator<<(ostream& out, const Edge& edge);
+<<Edge method implementations>>=
+ostream& operator<<(ostream& out, const Edge& edge)
+{
+    out << "(" << &edge << "): ";
+    if (edge.isForward == TRUE) {
+	out << edge.source->getId() << "(src) --> " 
+	    << edge.dest->getId() << "(dest)";
+    } else {
+	out << edge.dest->getId() << "(dest) --> "
+	    << edge.source->getId() << "(src)";
+    }
+    return out << " [" << edge.flow << "," << edge.capacity << "]";
+}
+<<Edge header include files>>=
+class ostream;
 @
 \subsubsection{File Boiler Plate}
 We start with the boiler-plate implementation file. 
 <<*>>=
 #include "Edge.h"
+#include "Node.h"
 #include "debug.h"
 #include <iostream.h>
 #include <iomanip.h>
