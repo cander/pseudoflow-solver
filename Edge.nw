@@ -108,12 +108,12 @@ Edge::Edge()
 After constructing an edge, we will need to initialize it.  
 The default orientation will be from the source to the destination.
 <<Edge methods>>=
-    void init(Node* src, Node* dst, FlowAmount cap);
+    void init(Node& src, Node& dst, FlowAmount cap);
 <<Edge method implementations>>=
-void Edge::init(Node* src, Node* dst, FlowAmount cap)
+void Edge::init(Node& src, Node& dst, FlowAmount cap)
 {
-    source = src;
-    dest = dst;
+    source = &src;
+    dest = &dst;
     flow = 0;
     capacity = cap;
     isForward = TRUE;
