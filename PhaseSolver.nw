@@ -136,7 +136,7 @@ queue a branch with $\ell = 1$, the initial value for weak nodes.
 Boolean PhaseSolver::processBranch(Node& root)
 {
 	Boolean performedMerger = FALSE;
-#ifdef COUNT_LABELS
+#ifdef __COUNT_LABELS
     if (labelCount[root.getLabel() - 1] == 0) {
 #else /* !COUNT_LABELS */
     if (FALSE) {
@@ -241,7 +241,7 @@ with label $l-1$ and the other with $l-2$.  We according to `lowest
 label' we should process the latter first, but we might not.  Maybe this
 is a bug that I should find to better understand global labeling?
 
-Note trios: We added code to check the nieghbor's distance label and
+Note trios: We added code to check the neighbor's distance label and
 merged to it only if it was less than ours, but this provided only
 minimal/negligible difference.  The code still must check the node labels
 to tell the difference between strong and weak nodes (weak nodes still
@@ -1782,7 +1782,6 @@ Strong nodes are added as strong branches.
 <<Solver method implementations>>=
 void PhaseSolver::setConstantLabels()
 {
-cout << "setConstantLabels" << endl;
     for (int i = 1; i <= numNodes; i++) {
 	Node& node = nodes[i];
 	if (node.isRootNode()) {
@@ -2301,7 +2300,7 @@ void PhaseSolver::setSpInitialNodeStatus()
 <<Solver data>>=
     int maxInitialLabel;
 <<default Solver constructor>>=
-    maxInitialLabel = 0;
+    maxInitialLabel = INIT_WEAK_LABEL;
 @ %def setSpInitialNodeStatus
 For a strong node, we iterate over its neighbors looking for nodes with
 non-positive excess and find the minimum label.  
@@ -2392,8 +2391,8 @@ ever happening.
 INLINE void PhaseSolver::initGlobalRelabel()
 {
     if (relabelFrequency > 0.0) {
-	relabelCounter = (int)(numNodes * relabelFrequency);
-	//relabelCounter = numNodes;
+	relabelCounter = numRelabels + (int)(numNodes * relabelFrequency);
+	//relabelCounter = (int)(numNodes * relabelFrequency);
     } else {
 	relabelCounter = MAXINT;
     }
@@ -2408,7 +2407,11 @@ void PhaseSolver::globalRelabel()
 {
     STATS(numGlobalRelabels++);
     TRACE( trout << "Begin global relabeling.  Lowest label: " << lowestLabel << endl; );
+    Boolean pruningEnabled = TRUE;
     <<set initial distance labels>>
+#ifdef SINK_DIST_RELABEL
+    <<load the bfs queue with sink-adj nodes without labeling>>
+#endif /* SINK_DIST_RELABEL */
     <<search backwards from the sink labeling nodes>>
     <<relabel/remove each branch>>
     IFDEBUG( checkBranches(); )
@@ -2424,11 +2427,31 @@ the sink.
     resetQ();
     for (int i = 1; i <= numNodes; i++) {
 	Node& node = nodes[i];
+#ifdef SINK_DIST_RELABEL
+	node.distance = MAXINT;
+#else
 	if (node.getExcess() < 0) {
 	    node.distance = 1;
 	    putNodeQ(node);
+	    // if (node.getLabel() > INIT_WEAK_LABEL) - disable pruning
 	} else {
 	    node.distance = MAXINT;
+	}
+#endif /* SINK_DIST_RELABEL */
+    }
+<<load the bfs queue with sink-adj nodes without labeling>>=
+    for(sinkNode->resetIterations();
+        sinkNode->hasMoreNeighbors();
+	sinkNode->advanceNeighbors())
+    {
+	Edge& edge = sinkNode->getCurrentNeighbor();
+	Node& edgeSource = *edge.getSource();
+	Node& edgeDest = *edge.getDest();
+	if ((&edgeSource != sourceNode) && (&edgeDest == sinkNode))
+
+	{
+	    edgeSource.distance = 1;
+	    putNodeQ(edgeSource);
 	}
     }
 @ Once we've labeled the nodes and put the negative excess ones in the queue,
@@ -2442,15 +2465,16 @@ a breadth-first search.
 	    <<label neighbor as needed>>
 	}
     }
-@ If this is the first time we've need this node, it's distance label 
+@ If this is the first time we've visited this node, it's distance label 
 will still be [[MAXINT]].  In that case, we check if we have residual
 capacity from the neighbor to ourselves.  If so, we label the node and
 put it in the queue to eventually process its neighbors.  If the neighbor's
 distances is less than [[MAXINT]] we must have already visited it, and its
-label is less than or equal to our current one.  So, we are done with it.
+distance is less than or equal to our current one.  So, we are done with it.
 <<label neighbor as needed>>=
     Node& neighbor = *edge->getOtherNode(nodep);
     if (neighbor.distance == MAXINT) {
+    //if (neighbor.distance > dist) {	// allow visting node multiple times - fix comment above
 	FlowAmount residCap = edge->residCapacity(neighbor);
 
 	if (residCap > 0) {
@@ -2489,28 +2513,34 @@ any new ones.  If we had a doubly-linked list it would be pretty simple.}
 	    }
 	}
     }
-@  If the root of a strong branch has distance label MAXINT, we assume
+@  If the root of a strong branch has node label of [[numNodes]],
+it has already been removed from the graph (by this code).  Otherwise if
+it has a distance label of MAXINT, we assume
 the whole branch does too, and we can remove it from the bucket.
 We set the labels of all nodes in the branches to [[numNodes]] to
 prevent any strong branches from trying to merge with this branch.
+The exception is if we have disabled pruning.  In which case we ignore
+the branch, leaving the labels as they are and the branch in the bucket.
 <<relabel/remove strong branch>>=
     NodeLabel oldLabel = node.getLabel();
-    if ((distance == MAXINT) && (oldLabel < numNodes)) {
-	buckets[oldLabel].removeNode(node);
-	setBranchLabel(node, numNodes);
-    }
-@ If the label is less than MAXINT and less than the number of nodes, we
-can look at relabeling it (if the label is [[numNodes]] we already pruned 
-it).  If we change the label of the root, we need to move it to another
-bucket.
-<<relabel/remove strong branch>>=
-    else if (oldLabel < numNodes) {
-	NodeLabel newLabel = relabelBranch(node);
-	if (newLabel != oldLabel) {
-	    assert(newLabel > oldLabel);
+    if (oldLabel < numNodes) {  
+	// we haven't already pruned this branch
+	if ((distance == MAXINT) && pruningEnabled) {
 	    buckets[oldLabel].removeNode(node);
-	    addStrongBranch(node);
+	    setBranchLabel(node, numNodes);
+	} else {
+	    <<relabel strong branch>>
 	}
+    } 
+@ If the label is less than MAXINT, we can relabel it.
+If we change the label of the root, we need to move it to another
+bucket.
+<<relabel strong branch>>=
+    NodeLabel newLabel = relabelBranch(node);
+    if (newLabel != oldLabel) {
+	assert(newLabel > oldLabel);
+	buckets[oldLabel].removeNode(node);
+	addStrongBranch(node);
     }
 @ This is a straightfoward, recursive DFS of the children
 to set the labels of all nodes
@@ -2544,6 +2574,7 @@ converting the queue to a stack.}
 <<Solver method implementations>>=
 NodeLabel PhaseSolver::relabelBranch(Node& node)
 {
+    <<skip infinite labels>>
     NodeLabel minLabel = MAXINT;
     ElIterator it = node.getChildren();
     for (EdgePtr edge = it.getNext(); edge != nil; edge=it.getNext()) {
@@ -2574,6 +2605,17 @@ NodeLabel PhaseSolver::relabelBranch(Node& node)
     return node.getLabel();
 }
 @ %def relabelBranch
+If we do not split when an arc goes to zero residual capacity during 
+renormalization ([[splitOnZeroCapacity=FALSE]]), then we can have nodes in
+a branch whose distance label is [[MAXINT]] because their parent edge has
+no residual capacity (and their are no other paths to the node).  
+In this case, we do not relabel the node.
+<<skip infinite labels>>=
+    if (node.distance > numNodes) {
+	cout << "Not relabeling " << node.getId() << " due to infinite distance" << endl;
+	return node.getLabel();
+    }
+@
 After scanning a node's neighbors and children, if we found no merger
 we need to increase the label by at least one.
 If we are using distance labels, it is possible to increase the node label
@@ -2604,7 +2646,6 @@ INLINE void PhaseSolver::increaseNodeLabel(Node& node)
 <<Solver method implementations>>=
 void PhaseSolver::setSinkDistLabels()
 {
-cout << "setSinkDistLabels" << endl;
     resetQ();
     <<initialize distances>>
     <<load the bfs queue with sink-adj nodes>>
@@ -2665,7 +2706,6 @@ observing monotonicity.  Then, it puts the strong nodes in buckets.
 <<Solver method implementations>>=
 void PhaseSolver::setInitialDistLabels()
 {
-cout << "setInitialDistLabels()" << endl;
     resetQ();
     <<initialize distances and load queue>>
     <<perform bfs distance labeling>>
