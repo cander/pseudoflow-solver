@@ -1,0 +1,115 @@
+\section{Phase-based Solver}
+@
+Push excess from the former strong root, $r_s$ to the strong node, $s$,
+and one step beyond to the weak node, $w$.
+When this finishes, the remaining excess will be stored on
+the destination node.
+We save the parent pointer before the push in case there is a
+split, in which case the parent pointer will be [[nil]].
+<<Solver methods>>=
+    void strongPush(NodePtr src, NodePtr dest);
+<<Solver method implementations>>=
+void PhaseSolver::strongPush(NodePtr src, NodePtr dest)
+{
+    NodePtr currNode = src;
+    while (currNode != dest) {
+	NodePtr parent = currNode->getParentNode();
+	Boolean performedSplit = currNode->pushToParent();
+	if (performedSplit) {
+	    if (currNode->getExcess() > 0) {
+		addStrongBranch(currNode);
+	    } // else - just a split, zero-deficit node?
+	}
+	currNode = parent;
+    }
+}
+@ %def strongPush
+Pushing on the weak side is similar in that it uses [[pushToParent]]
+to push all of the flow, but it differs in that we push all the way
+to the root of the branch, and we want to keep track of the lowest
+labeled node that we split off.
+<<Solver methods>>=
+    void weakPush(NodePtr src);
+<<Solver method implementations>>=
+void PhaseSolver::weakPush(NodePtr src)
+{
+    NodeLabel splitLabel = MAX_LABEL;
+    NodePtr currNode = src;
+    while (currNode->getParentNode() != nil) {
+	NodePtr parent = currNode->getParentNode();
+	Boolean performedSplit = currNode->pushToParent();
+	if (performedSplit) {
+	    if (currNode->getExcess() > 0) {
+		addStrongBranch(currNode);
+		splitLabel = currNode->getLabel();
+	    } // else - just a split, zero-deficit node?
+	}
+	currNode = parent;
+    }
+}
+@ %def weakPush
+<<Solver methods>>=
+    void addStrongBranch(NodePtr root);
+<<Solver method implementations>>=
+void PhaseSolver::addStrongBranch(NodePtr root)
+{
+    assert(root->getExcess() > 0);
+    // put in correct bucket
+    // look for new, lower label
+}
+<<Solver inline implementations>>=
+<<header include files>>=
+<<C++ overhead>>=
+<<Solver data>>=
+@
+\subsubsection{File Boiler Plate}
+We start with the boiler-plate implementation file. 
+<<*>>=
+#include "PhaseSolver.h"
+#include "Node.h"
+#include "debug.h"
+#include <iostream.h>
+#include <iomanip.h>
+#include <assert.h>
+
+<<Solver method implementations>>
+@
+Through magic of the C preprocessor and the macro-like facilities
+of {\em noweb}, we can easily define the inline functions
+out-of-line to allow us to collect better profile information - 
+i.e. collect data on the inline functions that would otherwise
+not show up in the function call traces of the profiler.
+<<*>>=
+#ifndef INLINE_SOLVER
+#define INLINE /*inline*/
+<<Solver inline implementations>>
+#undef INLINE 
+#endif /*INLINE_SOLVER*/
+@
+The header defines the [[Solver]] class, its member functions, member
+data, and inline functions.  Again, we have more boiler-plate.
+<<header>>=
+#ifndef SOLVER_H
+#define SOLVER_H
+#include "types.h"
+<<header include files>>
+
+class PhaseSolver 
+{
+public:
+    <<Solver methods>>
+    <<C++ overhead>>
+private:
+    <<Solver data>>
+};
+@ %def Solver
+In case we want the inline functions to really be inlined, we
+also define them here in the header file.
+<<header>>=
+#ifdef INLINE_SOLVER
+#define INLINE inline
+<<Solver inline implementations>>
+#undef INLINE 
+#endif /*INLINE_SOLVER*/
+
+#endif /*SOLVER_H*/

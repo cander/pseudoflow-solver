@@ -8,12 +8,12 @@ CFLAGS	= -Wall $(OPTIONS) $(INLINE) $(SITE_CFLAGS)
 # after installation, make doc.dvi for literate version
 
 # the order of these files is the order they show up in the latex doc
-WEBFILES = Node.nw Edge.nw EdgeList.nw Timer.nw
+WEBFILES = PhaseSolver.nw Node.nw Edge.nw EdgeList.nw Timer.nw
 
 SRCS     = Node.h Node.C Edge.h Edge.C EdgeList.C EdgeList.h \
-	   Timer.C Timer.h buildinfo.c
+	   PhaseSolver.C PhaseSolver.h Timer.C Timer.h buildinfo.c
 
-OBJECTS  = Node.o Edge.o EdgeList.o Timer.o buildinfo.o
+OBJECTS  = Node.o Edge.o EdgeList.o PhaseSolver.o Timer.o buildinfo.o
 
 LIBNAME	 = libpsa.a
 DOCFILES = doc.dvi doc.ps doc.aux doc.log allcode.tex doc.tex doc.toc
@@ -102,4 +102,5 @@ cvsignore:
 Node.o: Node.C Node.h types.h debug.h Edge.h EdgeList.h
 EdgeList.o: EdgeList.C EdgeList.h types.h debug.h
 Edge.o: Edge.C Edge.h Node.h types.h debug.h
+PhaseSolver.o: PhaseSolver.h PhaseSolver.C Node.h types.h debug.h Edge.h EdgeList.h
 Timer.o: Timer.h
