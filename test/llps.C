@@ -26,7 +26,7 @@ main(int argc, char** argv)
     void (PhaseSolver::* initFunc)() = &PhaseSolver::buildSimpleTree;
     void (PhaseSolver::* solverFunc)(AddBranchPtr) = &PhaseSolver::solve;
     AddBranchPtr addBranchFunc = &PhaseSolver::addBranchLifo;
-    MergePtr mergeFunc = &PhaseSolver::merge;
+    PhaseSolver* solver = new PhaseSolver();
 
     // parse arguments
     int ch;
@@ -54,9 +54,9 @@ main(int argc, char** argv)
 
 	case 'M':
 	    if (strcmp(optarg, "simplex") == 0) {
-		mergeFunc = &PhaseSolver::simplexMerge;
+		solver = new SimplexSolver();
 	    } else if (strcmp(optarg, "normal") == 0) {
-		mergeFunc = &PhaseSolver::merge;
+		solver = new PhaseSolver();
 	    } else {
 		cerr << "Invalid merge function option " << optarg << endl;
 		usage();
@@ -107,11 +107,9 @@ main(int argc, char** argv)
     const char* instanceName = argv[optind];
     const char* outputName = argv[optind + 1];
 
-    PhaseSolver solver;
     Timer initTimer;
     initTimer.start();
-    Boolean readOK =  solver.readDimacsInstance(instanceName);
-    solver.setMergeFunc(mergeFunc);
+    Boolean readOK =  solver->readDimacsInstance(instanceName);
     initTimer.stop();
 
     if (readOK) {
@@ -121,10 +119,10 @@ main(int argc, char** argv)
 	solveTimer.start();
 
 	treeTimer.start();
-	(solver.*initFunc)();
+	(solver->*initFunc)();
 	treeTimer.stop();
 
-	(solver.*solverFunc)(addBranchFunc);
+	(solver->*solverFunc)(addBranchFunc);
 	solveTimer.stop();
 
 	cout << "time to establish tree: " << treeTimer << endl;
@@ -154,10 +152,10 @@ main(int argc, char** argv)
 	dout << endl;
 
 	if (writeFlow) {
-	    solver.writeDimacsFlow(dout);
+	    solver->writeDimacsFlow(dout);
 	}
 	if (dumpNodes) {
-	    solver.dumpNodes(dout);
+	    solver->dumpNodes(dout);
 	}
 
 	dout.close();
