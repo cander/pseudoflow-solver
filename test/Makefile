@@ -28,8 +28,8 @@ llps.o: ../Node.h ../Edge.h ../PhaseSolver.h ../buildinfo.c
 
 
 profile:
-	rm llps.o
-	$(MAKE) OPTIONS="-pg" LDPROF="-pg" 
+	rm -f llps.o
+	$(MAKE) OPTIONS="-pg" LDPROF="-pg" INLINE="$(PROFILE_INLINE)" 
 
 optimize:
 	rm -f llps.o
