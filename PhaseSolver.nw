@@ -46,7 +46,7 @@ void PhaseSolver::solve(AddBranchPtr addFunc)
     TRACE(int currentPhase = 0;)
     addBranchFunc = addFunc;
     renormalizeFunc = &PhaseSolver::fullRenormalize;
-    int relabelCounter = numNodes / 2;
+    relabelCounter = numNodes;
 
     NodePtr strongBranch = getLowestBranch();
     while (strongBranch != nil) {
@@ -59,7 +59,7 @@ void PhaseSolver::solve(AddBranchPtr addFunc)
 	)
 	<<terminate early based on counting labels>>
 	Boolean performedMerger = processBranch(*strongBranch);
-	STATS(performedMerger ? numEmptyBranchScans++ : 0);
+	STATS(performedMerger ? 0 : numEmptyBranchScans++ );
 	<<check for global relabel>>
 	strongBranch = getLowestBranch();
     }
@@ -85,9 +85,11 @@ execution.
 This is rather expensive, so we don't want to do it very often.
 <<check for global relabel>>=
     if (numRelabels > relabelCounter) {
-	//globalRelabel();
-	relabelCounter = numRelabels + numNodes / 2;
+	globalRelabel();
+	relabelCounter = numRelabels + numNodes ;
     }
+<<Solver data>>=
+    int relabelCounter;
 @
 \subsection{Processing Branches}
 We process the tree one branch at a time looking for mergers or
@@ -204,9 +206,15 @@ won't try to merge.}
     while (node.hasMoreNeighbors()) {
 	Edge& neighborEdge = node.getCurrentNeighbor();
 	Node& neighbor = *neighborEdge.getOtherNode(&node);
-	if ((neighbor.getLabel() == (label - 1)) &&
+	// if ((neighbor.getLabel() == (label - 1)) &&
+	if ((neighbor.getLabel() <= (label - 1)) &&
 	    (neighborEdge.residCapacity(node) > 0))
 	{
+if (neighbor.getLabel() < (label - 1)) {
+    cout << "Super weak merger from " << node.getId() << " (l="
+		     << node.getLabel() << ") to " << neighbor.getId()
+		     << " (l=" << neighbor.getLabel() << ")" << endl;
+}
 	    merge(node, neighbor, neighborEdge);
 	    return TRUE;
 	}
@@ -266,7 +274,7 @@ INLINE void PhaseSolver::setLabel(Node& node, NodeLabel newLabel)
 #endif /* COUNT_LABELS */
     node.setLabel(newLabel);
     node.resetIterations();
-    // could put code here to count nodes that get set to numNodes
+    STATS(if (newLabel >= numNodes)  numRemovedNodes++);
 }
 @ %def setLabel
 When we know that a branch cannot merge with
@@ -795,6 +803,7 @@ void PhaseSolver::delayedNormalizeSolve(AddBranchPtr addFunc)
 	}
 
 	processBranch(*strongBranch);
+	<<check for global relabel>>
     }
 }
 @ %def delayedNormalizeSolve
@@ -2084,8 +2093,10 @@ void PhaseSolver::buildSpTree()
 	<<build weak branch>>
     }
 
+    setSpInitialNodeStatus();		//-- gotta bug here
     //setInitialNodeStatus();
-    setSpInitialNodeStatus();
+cout << "Checking branches" << endl;
+checkBranches();
 }
 @ %def buildSpTree
 First, we need to set all the labels to infinity.
@@ -2197,11 +2208,9 @@ void PhaseSolver::setSpInitialNodeStatus()
 node.setLabel(INIT_STRONG_LABEL);
 	    addStrongBranch(node);
 	} 
-/*
 else {
-    node.setLabel(INIT_WEAK_LABEL);
+    // node.setLabel(INIT_WEAK_LABEL);
 }
-*/
 	labelCount[node.getLabel()]++;
 	node.resetIterations();
     }
@@ -2252,11 +2261,15 @@ eliminate it from further processing.
 <<Solver method implementations>>=
 void PhaseSolver::globalRelabel()
 {
+    STATS(numGlobalRelabels++);
+cout << "global relabel start" << endl;
+    TRACE( trout << "Begin global relabeling.  Lowest label: " << lowestLabel << endl; );
     <<set initial distance labels to infinity>>
     <<search backwards from the sink labeling nodes>>
     <<relabel/remove each branch>>
 cout << "Checking branches" << endl;
 checkBranches();
+cout << "global relabel end" << endl;
 }
 @ %def globalRelabel
 We start by labeling all nodes with an initial distance of [[MAXINT]].
@@ -2272,6 +2285,7 @@ be reachable from some other sink-adjcent node.
 we use saturate-all, a sink-adjacent node may start strong, then
 merge and become weak.  Do we care??}
 <<search backwards from the sink labeling nodes>>=
+    resetQ();
     for(sinkNode->resetIterations();
         sinkNode->hasMoreNeighbors();
 	sinkNode->advanceNeighbors())
@@ -2280,12 +2294,40 @@ merge and become weak.  Do we care??}
 	Node& edgeSource = *edge.getSource();
 	Node& edgeDest = *edge.getDest();
 	if ((&edgeSource != sourceNode) && (&edgeDest == sinkNode)) {
-	    if (edgeSource.getExcess() <= 0) {
+	    if (edgeSource.getExcess() <= 0) {	// XXX check if weak?
 		edgeSource.distance = 1;
-		computeDistanceLabels(edgeSource);
+		putNodeQ(edgeSource);
 	    }
 	}
     }
+@ Once we've labeled the sink-adjacent nodes and put them in the queue,
+we continue processing nodes in the queue until done.  This performs
+a breadth-first search.
+<<search backwards from the sink labeling nodes>>=
+    for (NodePtr nodep = getNextNodeQ(); nodep != nil; nodep = getNextNodeQ()) {
+	int dist = nodep->distance + 1;
+	ElIterator it = nodep->getNeighbors();
+	for (EdgePtr edge = it.getNext(); edge != nil; edge=it.getNext()) {
+	    <<label neighbor as needed>>
+	}
+    }
+@ If this is the first time we've need this node, it's distance label 
+will still be [[MAXINT]].  In that case, we check if we have residual
+capacity from the neighbor to ourselves.  If so, we label the node and
+put it in the queue to eventually process its neighbors.  If the neighbor's
+distances is less than [[MAXINT]] we must have already visited it, and its
+label is less than or equal to our current one.  So, we are done with it.
+<<label neighbor as needed>>=
+    Node& neighbor = *edge->getOtherNode(nodep);
+    if (neighbor.distance == MAXINT) {
+	FlowAmount residCap = edge->residCapacity(neighbor);
+
+	if (residCap > 0) {
+	    neighbor.distance = dist;
+	    putNodeQ(neighbor);
+	}
+    }
+
 @ Computing the distance labels is pretty straightforward.  This code
 should be combined with the same code that does this during initialization.
 <<Solver methods>>=
@@ -2344,6 +2386,8 @@ In the future, maybe we can relabel the strong branch???
 void PhaseSolver::setBranchLabel(Node& node, NodeLabel l)
 {
     // XXX move this method to Node?
+cout << "relabeling " << node.getId() << " from " 
+		     << node.getLabel() << " to " << l << endl;
     TRACE( trout << "relabeling " << node.getId() << " from " 
 			 << node.getLabel() << " to " << l << endl; );
     setLabel(node, l);
@@ -2375,6 +2419,9 @@ NodeLabel PhaseSolver::relabelWeakBranch(Node& node)
 	}
     }
 
+    if (minLabel == MAXINT) {
+	minLabel = (node.distance > node.getLabel()) ? node.distance : node.getLabel();
+    }
     assert(minLabel >= node.getLabel());
     if (node.distance > node.getLabel()) {
 	NodeLabel newLabel = (minLabel < node.distance) ? minLabel : node.distance;
@@ -2390,6 +2437,36 @@ NodeLabel PhaseSolver::relabelWeakBranch(Node& node)
     return node.getLabel();
 }
 @ %def relabelWeakBranch
+
+<<Solver data>>=
+    NodePtr* nodeQ;
+    NodePtr* qRead;
+    NodePtr* qWrite;
+<<Solver methods>>=
+    void resetQ();
+    NodePtr getNextNodeQ();
+    void putNodeQ(Node& node);
+<<Solver method implementations>>=
+void PhaseSolver::resetQ()
+{
+    qRead = qWrite = nodeQ;
+    *qRead = nil;
+}
+NodePtr PhaseSolver::getNextNodeQ()
+{
+    if (qRead < qWrite) {
+	return *qRead++;
+    } else {
+	return nil;
+    }
+}
+void PhaseSolver::putNodeQ(Node& node)
+{
+    *qWrite = &node;
+    qWrite++;
+}
+
+@
 \subsection{Recovering a Feasible Flow}
 When the pseudoflow algorithm completes, there are no merger arcs between
 the strong nodes and weak nodes, and there is excess at the roots of
@@ -2882,11 +2959,7 @@ void PhaseSolver::labelSubtree(Node& node, NodeLabel l)
 	node.advanceChildren();
     }
 
-#ifdef  COUNT_LABELS 
-    labelCount[node.getLabel()]--;
-    labelCount[l]++;
-#endif /* COUNT_LABELS */
-    node.setLabel(l);
+    setLabel(node, l);
 }
 @ %def labelSubtree
 
@@ -2990,9 +3063,11 @@ allocate an extra node (node zero), that never really gets used.
     buckets = new NodeBucket[numNodes + 1];
     nodeDegrees = new int[numNodes + 1];
     labelCount = new int[numNodes + 1];
+    nodeQ = new NodePtr[numNodes + 1];
 
     for (int i = 0; i <= numNodes; i++) {
 	nodeDegrees[i] = labelCount[i] = 0;
+	nodeQ[i] = nil;
     }
 <<local variables for reading>>=
     int numTokens = 0;
@@ -3106,17 +3181,22 @@ void PhaseSolver::writeStats(ostream& dout)
     dout << "c  numMergers:    " << numMergers      << endl;
     dout << "c  numSplits:     " << numSplits       << endl;
     dout << "c  numRelabels:   " << numRelabels     << endl;
+    dout << "c  numGlobalRelabels:   " << numGlobalRelabels     << endl;
     dout << "c  numEmptyBranchScans: " << numEmptyBranchScans << endl;
+    dout << "c  numRemovedNodes: " << numRemovedNodes << endl;
     dout << "c  lowestLabel:   " << lowestLabel     << endl;
     dout << "c"                                     << endl;
 <<Solver data>>=
     int numMergers;
     int numSplits;
     int numRelabels;
+    int numGlobalRelabels;
     int numEmptyBranchScans;
-@ %def numMergers numSplits numRelabels numEmptyBranchScans
+    int numRemovedNodes;
+@ %def numMergers numSplits numRelabels numGlobalRelabels numEmptyBranchScans numRemovedNodes
 <<default Solver constructor>>=
-    numMergers = numSplits = numRelabels = numEmptyBranchScans = 0;
+    numMergers = numSplits = numRelabels = numGlobalRelabels = 0;
+    numEmptyBranchScans = numRemovedNodes = 0;
 @
 To compute the flow amount, we just scan the neighbors of the source
 node and sum the flows on those arcs.  If we were paranoid, we'd also
