@@ -51,6 +51,7 @@ main(int argc, char** argv)
 		initFunc = &PhaseSolver::saturateAllArcs;
 	    } else if (strcmp(optarg, "greedy") == 0) {
 		initFunc = &PhaseSolver::buildGreedyPathTree;
+		// should also support greedy:N where N is numSplits
 	    } else {
 		cerr << "Invalid initialization option " << optarg << endl;
 		usage();
@@ -65,7 +66,7 @@ main(int argc, char** argv)
 	case 'M':
 	    if (strcmp(optarg, "simplex") == 0) {
 		solver = new SimplexSolver();
-	    } else if (strcmp(optarg, "normal") == 0) {
+	    } else if (strcmp(optarg, "pseduo") == 0) {
 		solver = new PhaseSolver();
 	    } else {
 		cerr << "Invalid merge function option " << optarg << endl;
@@ -77,7 +78,7 @@ main(int argc, char** argv)
 	case 'N':
 	    if (strcmp(optarg, "delayed") == 0) {
 		solverFunc = &PhaseSolver::delayedNormalizeSolve;
-	    } else if (strcmp(optarg, "normal") == 0) {
+	    } else if (strcmp(optarg, "immed") == 0) {
 		solverFunc = &PhaseSolver::solve;
 	    } else {
 		cerr << "Invalid normalization option " << optarg << endl;
@@ -185,12 +186,15 @@ main(int argc, char** argv)
     Timer convertTimer;
     convertTimer.start();
     if (!dumpNodes) {
+	// don't convert to flow if we're dumping the nodes,
+	// which only makes sense after phase I before conversion
 	solver->convertToFlow();
     }
     convertTimer.stop();
 
     totalTimer.stop();
 
+    cout << "time to readInstance: " << initTimer << endl;
     cout << "time to establish tree: " << treeTimer << endl;
     cout << "done solving: " << solveTimer << endl;
     cout << "time to convert flow: " << convertTimer << endl;
@@ -200,7 +204,8 @@ main(int argc, char** argv)
     dout << "c  beginRun: " << ctime(&beginTime);
     dout << "c  endRun: " << ctime(&endTime);
 
-    dout << "c  timeToInitialize: " << initTimer << endl;
+    dout << "c  timeToRead: " << initTimer << endl;
+    dout << "c  timeToInitialize: " << treeTimer << endl;
     dout << "c  timeToSolve: " << solveTimer << endl;
     dout << "c  timeToFlow: " << convertTimer << endl;
     dout << "c  totalTime: " << totalTimer << endl;
