@@ -1,3 +1,4 @@
+%% $Revision: 1.76 $, $Date: 2000/12/11 19:06:21 $
 \section{Pseudoflow Solver}
 The solver manages the entire problem instance.  Initially
 this includes the nodes and edges.  These are stored as contiguous
@@ -399,7 +400,7 @@ void PhaseSolver::strongPush(Node& src, Node& dest)
 	NodePtr parent = currNode->getParentNode();
 	STATS(numPushToParent++);
 	Boolean performedSplit = currNode->pushToParent();
-	<<check for zero-capcity split>>
+	performedSplit = splitZeroCapArc(*currNode, performedSplit);
 
 	if (performedSplit) {
 	    STATS(numSplits++);
@@ -411,18 +412,26 @@ void PhaseSolver::strongPush(Node& src, Node& dest)
     }
 }
 @ %def strongPush
-We allow special handling if an edge has zero residual capacity.
-It could be split or left alone.
-<<check for zero-capcity split>>=
-    if (performedSplit == FALSE && 
-	currNode->getParentCapacity() == 0 &&
+We allow special handling if an edge has zero residual capacity and we
+didn't already split it.  It could be split or left alone depending on
+[[splitOnZeroCapacity]].  Returns true if we perform a new split.
+Otherwise, we just return the the [[alreadySplit]] parameter.
+<<Solver methods>>=
+    Boolean splitZeroCapArc(Node& node, Boolean alreadySplit);
+<<Solver inline implementations>>=
+INLINE Boolean PhaseSolver::splitZeroCapArc(Node& node, Boolean alreadySplit)
+{
+    if (alreadySplit == FALSE && 
+	node.getParentCapacity() == 0 &&
 	splitOnZeroCapacity) 
     {
-	STATS(numSplits++);
-	currNode->split();
-	performedSplit = TRUE;
-    }
-@
+	node.split();
+	return TRUE;
+    } 
+
+    return alreadySplit;
+}
+@ %def splitZeroCapArc
 We need to determine if a node is strong.  Usually, this means that
 it has positive excess, but in some cases, we can choose to treat
 a node with zero excess as strong.  We want to select that at
@@ -455,7 +464,7 @@ Boolean PhaseSolver::weakPush(Node& src)
 	STATS(numPushToParent++);
 	Boolean performedSplit = currNode->pushToParent();
 	currNode->clearFlag(DEFERRED);
-	<<check for zero-capcity split>>
+	performedSplit = splitZeroCapArc(*currNode, performedSplit);
 
 	if (performedSplit) {
 	    STATS(numSplits++);
@@ -2920,13 +2929,18 @@ we update the label count appropriately.
 		addStrongBranch(node);
 	    }
 	}  else if (node.distance == MAXINT) {
-	    // notice with cher graphs that some zero-deficit nodes are
-	    // unreachable during initialization???
-	    // XXX this might be an uneeded hack now
-	    node.setLabel(INIT_WEAK_LABEL);
-	    node.distance = 1;
+	    if (node.isRootNode()) {
+		// noticed with cher graphs that some zero-deficit nodes are
+		// unreachable during initialization???
+		// XXX this might be an uneeded hack now
+		// 12/8/00 - found case with gpps where strong branch was
+		// pruned, but child still had infinite distance, so it
+		// was getting reset to one.  isRootNode check will block that.
+		node.setLabel(INIT_WEAK_LABEL);
+		node.distance = 1;
+	    }
 	}
-	labelCount[node.getLabel()]++;
+	labelCount[node.getLabel()]++;		// XXX - unneeded?
 	node.resetIterations();
 	if (node.getLabel() > maxInitialLabel) {
 	    maxInitialLabel = node.getLabel();
@@ -3287,7 +3301,7 @@ void PhaseSolver::reduceFlow(Node& from, Edge& edge, FlowAmount amt)
 @ %def reduceFlow
 
 @
-\subsection{Parametric Sensitivity Analysis}
+\subsection{Source-Sink Parametric Sensitivity Analysis}
 We support simple parametric sensitivity analysis based on the form
 used by GGT.  Given a sequence of increasing values of a parameter, 
 $\lambda$, the source-adjacent arcs have non-decreasing capacity, and
@@ -3531,6 +3545,180 @@ void PhaseSolver::labelSubtree(Node& node, NodeLabel l)
 }
 @ %def labelSubtree
 
+\subsection{General Parametric Sensitivity Analysis}
+We also support more general parametric sensitivity analysis.  We allow
+the capacity of any edge to be adjusted in any way.  During this process,
+we keep saturated arcs saturated by increasing their flow.  If we decrease
+the capacity of an arc (staturate or not) below it's existing flow, we
+reduce the flow on the arc to match the capacity.  This process creates
+excess and deficit throughout the graph.  So, we renormalize the graph by
+pushing excess up towards the root and pulling excess down to nodes with
+deficit.  This process can lead to strong nodes becoming weak and weak
+nodes becoming strong.  Also, as arcs are saturated, we split the tree.
+
+After the tree is re-normalized, we can re-solve it.  Unfortunately, we
+have not been able to establish any complexity results that would suggest
+that this process is any faster than just repeatedly re-applying the
+solver.  However, we expect it will run faster in practice.
+
+First, we need a function to adjust the capacity of an arc.  
+<<Solver protected members>>=
+    int adjustCapacity(EdgePtr hint, NodeId src, NodeId dest, FlowAmount newCap);
+<<Solver inline implementations>>= 
+INLINE FlowAmount PhaseSolver::adjustCapacity(EdgePtr hint, NodeId srcId, 
+                                 NodeId destId, FlowAmount newCap)
+{
+    Edge* edge = nil;
+    <<search for edge>>
+    assert((edge->getSource()->getId() == srcId) && (edge->getDest()->getId() == destId));
+    FlowAmount flowDelta = edge->adjustCapacity(newCap);
+    if (flowDelta != 0) {
+	// does the orientation matter?
+	// positive flow delta means send more flow to the dest
+	edge->getDest()->incrementExcess(flowDelta);
+	edge->getSource()->decrementExcess(flowDelta);
+    }
+
+    return flowDelta;
+}
+@ %def adjustCapacity
+To search for an edge, we first see if the caller knows where to look
+based on the hint.  If the hint is null or wrong, we have to search
+for exhaustively, but iterating over the neighbors of the source node.
+If we wanted to be extra efficient, we could search on either the source
+or the destination, depending on which has fewer neighbors.
+<<search for edge>>=
+    NodePtr srcNodep = &nodes[srcId];
+    NodePtr destNodep = &nodes[destId];
+    if ((hint != nil) && (hint->getSource() == srcNodep) &&
+	(hint->getDest() == destNodep))
+    {
+	edge = hint;
+    } else {
+	// just search from the source
+	cout << "adjustCapacity: searching for (" << srcId << "," << destId << ")" << endl;
+	ElIterator it = srcNodep->getNeighbors();
+	for (edge = it.getNext(); edge != nil; edge=it.getNext()) {
+	    if (edge->getDest() == destNodep) {
+		break;
+	    }
+	}
+    }
+@
+Once we have adjusted the capacities, we need to renormalize the tree.  We
+want to proceed from the leaves of each branch pushing or pulling excess
+from the parent until we reach the root.  Since we don't have a list of
+leaf nodes, we will scan all nodes to find roots and perform a post-order
+traversal of each branch.  
+
+After renormalizing the flow in the branches, the labels will be invalid.  
+Therefore, we empty the strong buckets as we iterate from 1 to $n$, 
+and label all the nodes with distance to deficit when we're done.
+<<Solver methods>>=
+    void renormalizeTree();
+<<Solver method implementations>>=
+void PhaseSolver::renormalizeTree()
+{
+    for (int i = 1; i <= numNodes; i++) {
+	Node& node = nodes[i];
+	<<reset bucket i>>
+	buckets[i].emptyBucket();
+	node.setNextNil();
+	if (&node == sourceNode || &node == sinkNode) {
+	    continue;
+	}
+	if (node.isRootNode()) {
+	    // could/should be more efficient with this by recognizing newly
+	    // created roots that are already normalized
+	    renormalizeBranch(node);
+	    <<deal with root changing strength>>
+	}
+    }
+
+    setLabelsAndStatus(LABELS_DEFICIT_DIST);
+}
+@ %def renormalizeTree
+During renormalization, we want to empty all the buckets for strong nodes
+because strong nodes may become weak, and weak nodes may become strong.
+It's simple to just empty them all.  While we are performing the loop from
+one to [[numNodes]], can reset/empty the buckets too.  Technically, we
+don't need to loop all the way up to [[numNodes]], but it's simpler this
+way.  Also, we need to remove every node from the bucket it may belong to
+by reseting its `next' pointer.
+<<reset bucket i>>=
+    buckets[i].emptyBucket();
+    node.setNextNil();
+@ Once we have renormalized a branch, we have four possible outcomes with
+regards to if it was strong/weak before versus after.  If it is unchanged,
+that's trivial.  If a weak becomes strong, just add it as a strong
+branch.  If a strong root becomes weak, we have to remove it from its
+bucket. {\em NB: this could be a performance issue because [[removeNode]]
+is a linear search.}  
+
+In practice, we simplify this by always adding a branch that is currently
+strong.  This is safe because [[addStrongBranch]] is a no-op if the branch
+is already in a bucket.  If the branch is weak and still in bucket, then
+we remove it.
+
+{\em Removed this code becase setLabelsAndStatus will put the strong
+branches into buckets.}
+<<deal with root changing strength>>=
+    /*
+    Boolean rootIsStrong = isStrongNode(node);
+    if (rootIsStrong) {
+	    addStrongBranch(node);
+    } else {
+	if (branchInBucket(node)) {
+	    buckets[node.getLabel()].removeNode(node);
+	}
+    }
+    */
+@ Renormalizing a branch is where the real work is.  As is usually the
+case, we will iterate over the branch recursively to renormalize all of
+our children.  They will push/pull excess to/from us as needed.  Then, we
+can look at our excess/deficit to decide what we need from our parent.
+<<Solver methods>>=
+    void renormalizeBranch(Node& node);
+<<Solver method implementations>>=
+void PhaseSolver::renormalizeBranch(Node& node)
+{
+    node.resetIterations();
+    while (node.hasMoreChildren()) {
+	Node& child = node.getCurrentChild();
+	renormalizeBranch(child);
+	node.advanceChildren();
+    }
+
+    <<renormalize this node>>
+    node.resetIterations();
+}
+@ %def renormalizeBranch
+To renormalize this node, we push excess to our parent or pull some down
+if have a deficit.  This could saturate the link to our parent, in which
+case we have to split.  If we split a strong branch, we need to add it as
+a strong branch.  If this node is already the root of a branch, there is
+nothing to do.
+<<renormalize this node>>=
+    if (node.isRootNode() == FALSE) {
+	FlowAmount excess = node.getExcess();
+	if (excess > 0) {
+	    Boolean performedSplit = node.pushToParent();
+	    performedSplit = splitZeroCapArc(node, performedSplit);
+	    if (performedSplit) {
+		STATS(numSplits++);
+    // if (isStrongNode(node)) {	
+	// addStrongBranch(node);
+    // } 
+	    }
+	} else if (excess < 0) {
+	    Boolean performedSplit = node.pullFromParent();
+	    performedSplit = splitZeroCapArc(node, performedSplit);
+	    if (performedSplit) {
+		STATS(numSplits++);
+	    }
+	}
+    }
+@
 \subsection{Input Output Functions}
 We need routines to read Dimacs problem files and write 
 Dimacs flow files.  At the moment, these are member
@@ -3741,6 +3929,56 @@ node degrees.
 <<initialize nodes>>=
     delete[] nodeDegrees;
 @
+During general parametric analysis,
+to adjust the whole graph, we support reading a Dimacs file with the new
+capacities.  If the arcs occur in the same order as we read them
+initially, then our hint system in [[adjustCapacity]] will work by just 
+stepping through edge array.  This function is just a bastard version of
+[[readDimacsInstance]].
+<<Solver methods>>=
+    Boolean readNewCapacities(const char* filename);
+<<Solver method implementations>>=
+Boolean PhaseSolver::readNewCapacities(const char* filename)
+{
+    FILE* fp = fopen(filename, "r");
+    if (fp != NULL) {
+	int nextEdgeNum = 0;
+	while (!feof(fp)) {
+	    char buffer[500];
+	    if (fgets(buffer, 500, fp) == NULL) {
+		break;
+	    }
+	    char type;
+	    sscanf(buffer, "%c", &type);
+	    if (type == 'a') {
+		<<process new capacity>>
+	    }
+	}
+	fclose(fp);
+    } else {
+	perror("Unable to read new capacities");
+	return FALSE;
+    }
+
+    renormalizeTree();
+    return TRUE;
+}
+@ %def readNewCapacities
+Processing a new arc capacity is pretty straightforward - just read the
+line and call \code{adjustCapacity}.
+<<process new capacity>>=
+    int source, dest, capacity;
+    int numTokens =  sscanf(&buffer[2], "%d %d %d", 
+			&source, &dest, &capacity);
+    if ((numTokens != 3) || (source <= 0) || (source > numNodes) ||
+	(dest <= 0) || (dest > numNodes)) {
+	cerr << "Invalid edge line: " << buffer << endl;
+	return FALSE;
+    }
+
+    adjustCapacity(&edges[nextEdgeNum], source, dest, capacity);
+    nextEdgeNum++;
+@
 After we read an instance and solve it, we need to write the result
 out.  The Dimacs flow file is very similar to the instance in
 that every line is identified by an initial type character followed
@@ -3931,6 +4169,8 @@ PhaseSolver::PhaseSolver()
 @
 We start with the boiler-plate implementation file. 
 <<*>>=
+// $Revision: 1.76 $, $Date: 2000/12/11 19:06:21 $
+// This C++ code was generated by noweb from the corresponding .nw file
 #include "PhaseSolver.h"
 #include "debug.h"
 #include <iostream.h>
@@ -3960,10 +4200,13 @@ Now, we'll add the simplex solver methods.
 The header defines the [[PhaseSolver]] class, its member functions, member
 data, and inline functions.  Again, we have more boiler-plate.
 <<header>>=
+// $Revision: 1.76 $, $Date: 2000/12/11 19:06:21 $
+// This C++ code was generated by noweb from the corresponding .nw file
 #ifndef SOLVER_H
 #define SOLVER_H
 #include "types.h"
 #include "Node.h"
+#include <iostream.h>
 <<header include files>>
 @ We have used some pointer to member function types to select run-time
 behavior.
