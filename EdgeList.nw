@@ -71,7 +71,6 @@ no choice.
 <<EdgeList method implementations>>=
 void EdgeList::compactList()
 {
-    int newSize = size;
     int start = 0;
     Boolean isEmpty = TRUE;
     while (start < size) {
@@ -90,7 +89,6 @@ void EdgeList::compactList()
 	if (nonHole < size) {
 	    array[hole] = array[nonHole];
 	    array[nonHole] = nil;
-	    newSize--;
 	    isEmpty = FALSE;
 	}
 	start = nonHole;
@@ -101,7 +99,11 @@ void EdgeList::compactList()
     if (isEmpty) {
 	currentIndex = size = 0;
     } else {
-	size = newSize;
+	for (size = 0; size < capacity; size++) {
+	    if (array[size] == nil) {
+		break;
+	    }
+	}
     }
 }
 @ %def compactList
@@ -347,6 +349,28 @@ EdgePtr EdgeList::getElement(int i) const
     return array[i];
 }
 @
+\subsubsection{Iterator class}
+<<ElIterator public declarations>>=
+    ElIterator(EdgeList& l);
+<<EdgeList inline implementations>>=
+INLINE ElIterator::ElIterator(EdgeList& l) : list(l), position(-1)
+{ }
+<<ElIterator public declarations>>=
+    EdgePtr getNext();
+<<EdgeList inline implementations>>=
+INLINE EdgePtr ElIterator::getNext()
+{
+    EdgePtr result = nil;
+    while (++position < list.size) {
+	if (list.array[position] != nil) {
+	    result = list.array[position];
+	    break;
+	}
+    }
+
+    return result;
+}
+@
 \subsubsection{File Boiler Plate}
 We start with the boiler-plate implementation file. 
 <<*>>=
@@ -377,6 +401,7 @@ data, and inline functions.  Again, we have more boiler-plate.
 #include "types.h"
 #include "debug.h"
 
+class ElIterator;
 class EdgeList 
 {
     <<EdgeList methods>>
@@ -385,6 +410,18 @@ protected:
     <<EdgeList internal methods>>
 private:
     <<EdgeList data>>
+    friend class ElIterator;
+};
+@ Here's the declaration for our iterator class.
+<<header>>=
+class ElIterator
+{
+    EdgeList& list;
+    int position;
+public:
+    <<ElIterator public declarations>>
+private: 
+    ElIteator();
 };
 @ %def EdgeList
 In case we want the inline functions to really be inlined, we
