@@ -535,10 +535,8 @@ private:
 We start with the boiler-plate implementation file. 
 <<*>>=
 #include "Node.h"
-#include "debug.h"
 #include <iostream.h>
 #include <iomanip.h>
-#include <assert.h>
 
 <<Node method implementations>>
 @
@@ -560,6 +558,7 @@ data, and inline functions.  Again, we have more boiler-plate.
 #ifndef NODE_H
 #define NODE_H
 <<header include files>>
+#include "debug.h"
 
 class Node 
 {
