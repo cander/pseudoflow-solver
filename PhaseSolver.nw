@@ -44,6 +44,9 @@ void PhaseSolver::solve()
 @ %def solve
 We need to saturate all source- and sink.adjacent edges, label the 
 source-adjacent nodes 2, and label the others 1.
+When we saturate an edge, we do {\em not} toggle its orientation.
+This will prevent flow from going back to either the source
+or the sink.
 <<initialize nodes and edges>>=
     for (int i = 0 ; i < numEdges; i++) {
 	Edge& edge = edges[i];
@@ -52,9 +55,11 @@ source-adjacent nodes 2, and label the others 1.
 	    FlowAmount excess = edge.saturate();
 	    edge.getHead()->setLabel(2);
 	    edge.getHead()->setExcess(excess);
+	    edge.getHead()->removeNeighbor(edge);
 	} else if (edge.getHead() == sinkNode) {
 	    FlowAmount excess = edge.saturate();
 	    edge.getTail()->setExcess(-excess);
+	    edge.getTail()->removeNeighbor(edge);
 	}
     }
     for (int i = 1; i <= numNodes; i++) {
@@ -67,87 +72,76 @@ source-adjacent nodes 2, and label the others 1.
 @
 \subsection{Processing Branches}
 We process the tree one branch at a time looking for mergers or
-relabeling nodes.  This function examines
-the whole branch.  If there is a merger that generates a split with
-a lower label, the function will stop processing the branch.  If there
-are no mergers for this branch, move it to the next bucket.  For
-convenience, the function returns either the label of the new,
-lower labeled merger branch or the new label of this branch if no
-merger was detected.
+relabeling nodes.  As soon as there is a merger, we stop processing
+this branch to allow the main loop to fetch the next, lowest-labeled
+branch from the buckets.  It could be that we resume processing this 
+branch, which is OK.  In fact, it is probably desireable since
+the branch has been inverted.  If there was no merger, we
+move the branch to the next bucket.
 <<Solver methods>>=
-    NodeLabel processBranch(Node& root);
+    void processBranch(Node& root);
 <<Solver method implementations>>=
-NodeLabel PhaseSolver::processBranch(Node& root)
+void PhaseSolver::processBranch(Node& root)
 {
-    NodeLabel label = root.getLabel();
-    NodeLabel newLabel = processSubtree(root);
-    if (newLabel == (label + 1)) {
-	// no merger, put it in the next bucket
-	addStrongBranch(root);
+    Boolean performedMerger = processSubtree(root);
+    if (!performedMerger) {
+	addStrongBranch(root);	// XXX maybe this should be in solve
     }
-
-    return newLabel;
 }
 @ %def processBranch
 Below is recursive code to perform the DFS scan of a node's children and to
 look for merger arcs among its neighbors.  Currently, the code
-processes the nodes in pre-order - i.e. the children are all processed
+processes the nodes in post-order - i.e. the children are all processed
 before the neighbors of this node are scanned.
-If this function performs a merger, it returns the lowest label of
-any branches that get split off and made strong.  If such a branch
-has a lower label than the current node, we stop processing this node.
-If there is no merger, the label of this node is incremented, and we
-return this new, higher label.
+If this function performs a merger, it returns immediately.
+If any part of the sub-tree is split off and strong, it will
+be put in the appropriate bucket where [[getLowestBranch]] will
+find it.  If there is no merger, the label of this node is incremented.
+The function returns true or false if we perform a merger.
 <<Solver methods>>=
-    NodeLabel processSubtree(Node& node);
+    Boolean processSubtree(Node& node);
 <<Solver method implementations>>=
-NodeLabel PhaseSolver::processSubtree(Node& node)
+Boolean PhaseSolver::processSubtree(Node& node)
 {
     NodeLabel label = node.getLabel();
     <<process all children>>
     <<look for merger among neighbors>>
+    // no merger
     node.incrementLabel();
     node.resetIterations();
-    return node.getLabel();
+    return FALSE;
 }
 @ %def processSubtree
 We process all children that have the same label as ours, [[label]].
 If a child has a higher label, we just ignore it.  By monotonicity,
 it can't have a label less than ours.  If we process the sub-tree
-and that generates a merger that results in a split with a label
-less than our current label, we quit to terminate this phase.
+and that generates a merger we return immediately.
 <<process all children>>=
     while (node.hasMoreChildren()) {
 	Node& child = node.getCurrentChild();
 	assert(child.getLabel() >= label);
 	if (child.getLabel() == label) {
-	    NodeLabel splitLabel = processSubtree(child);
-	    if (splitLabel < label) {
-		// got a split, quit immediately
-		return splitLabel;
+	    Boolean performedMerger = processSubtree(child);
+	    if (performedMerger) {
+		return TRUE;
 	    }
 	}
 	node.advanceChildren();
     }
 @
 Processing neighbors is a bit different.  Here is where we look for
-a merger to a node with label exactly one less that ours.  We also
-need residual capacity from our node to the neighbor.  Given than,
-we will merge, and again we keep our eyes out for a split with 
-a lower label.
+a merger to a node with label exactly one less that ours
+(given that the arc has residual capacity).  
+Given that, we will merge and return true immediately.
 <<look for merger among neighbors>>=
     while (node.hasMoreNeighbors()) {
 	Edge& neighborEdge = node.getCurrentNeighbor();
 	Node& neighbor = *neighborEdge.getOtherNode(&node);
 	if ((neighbor.getLabel() == (label - 1)) &&
-	    (neighborEdge.residCapacity() > 0))
+	    (neighborEdge.residCapacity(node) > 0))
 	{
-	    NodeLabel splitLabel = merge(node, neighbor, neighborEdge);
-	    if (splitLabel < label) {
-		// generated a split, quit
-		return splitLabel;
-	    } // else: return -1 to force termination???
-	    // do we advance neighbors for any merger???
+	    merge(node, neighbor, neighborEdge);
+	    return TRUE;
 	}
 	node.advanceNeighbors();
     }
@@ -169,6 +163,7 @@ NodeLabel PhaseSolver::merge(Node& strong, Node& weak, Edge& edge)
 {
     Node& strongRoot = *strong.rehang();
     weak.addChild(strong, edge);
+    CHECK_TREE(weak, weak.getParentEdge());
     strongPush(strongRoot, weak);
     NodeLabel splitLabel = weakPush(weak);
 
@@ -214,6 +209,7 @@ NodeLabel PhaseSolver::weakPush(Node& src)
 	NodePtr parent = currNode->getParentNode();
 	Boolean performedSplit = currNode->pushToParent();
 	if (performedSplit) {
+	    CHECK_TREE(*currNode, nil);
 	    if (currNode->getExcess() > 0) {	// ZERO_DEFICT
 		addStrongBranch(*currNode);
 		splitLabel = currNode->getLabel();
@@ -221,6 +217,7 @@ NodeLabel PhaseSolver::weakPush(Node& src)
 	}
 	currNode = parent;
     }
+    CHECK_TREE(*currNode, nil);
 
     return splitLabel;
 }
