@@ -257,7 +257,7 @@ void EdgeList::removeElement(EdgePtr edgep)
 	    return;
 	}
     }
-    assert("failed to find edge");	// force assertion failure
+    assert("failed to find edge" == nil);	// force assertion failure
 }
 @ %def removeElement
 One complication is if we remove the last element in the list,
