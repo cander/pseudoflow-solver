@@ -2221,7 +2221,7 @@ labeled.
 Once we have built the weak trees, we need to establish the initial status
 of all nodes.  If we want to set constant labels (one and two), we need to
 reset the distances while we're at it.\footnote {This is due to the check
-we currently have in [[processSubtree] to check that the label is greater
+we currently have in [[processSubtree]] to check that the label is greater
 than or equal to the distance.   After we experiment with integrated
 distance labels, we may be able to remove that check and this code.}
 Therefore, in addition to the usual function, [[setConstantLabels]], we
