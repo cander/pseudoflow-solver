@@ -4,9 +4,11 @@
 #ifdef DEBUG
   extern Boolean checkTree;
   #define IFCHECK  if (checkTree)
+  #define IFDEBUG(code) { code; }
 #else /*!DEBUG*/
   #define IFCHECK  if (0)
   #define NDEBUG		// disable assertions
+  #define IFDEBUG(code) { }
 #endif /*DEBUG*/
 
 #include <assert.h>
