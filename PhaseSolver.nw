@@ -1,23 +1,24 @@
 \section{Phase-based Solver}
 The solver manages the entire problem instance.  Initially
 this includes the nodes and edges.  These are stored as contiguous
-arrays (as opposed to allocating each one with [[new]])
+arrays (as opposed to allocating each one individually with [[new]])
 to make memory management fast and simple.  These arrays are allocated
 when the problem instance is read.
 <<Solver data>>=
     Node*	nodes;
     Edge*	edges;
+@ %def nodes edges
 <<default Solver constructor>>=
     nodes = nil;
     edges = nil;
-@ %def nodes edges
+@ 
 Just for safety checking, we should also keep track of the
 number of elements in each of these arrays.
 <<Solver data>>=
     int		numNodes;
     int		numEdges;
 <<default Solver constructor>>=
-    numNodes = numEdges = nil;
+    numNodes = numEdges = 0;
 @ %def numNodes numEdges
 We also need to know the source and sink nodes in the graph.
 <<Solver data>>=
@@ -30,7 +31,13 @@ We also need to know the source and sink nodes in the graph.
 At the highest level, solving is pretty simple: we select the
 lowest labeled strong branch, process it looking for mergers and 
 relabling nodes that do not merge, and continue until we cannot
-find a strong branch.
+find a strong branch.  We can select different policies for managing the list of strong
+branches (the buckets).  
+
+The solver function below performs the usual, full normalization 
+after each merger: push the flow all the way from the strong root
+to the weak root.  Later we will introduce another solver that
+only performs a partial normalization after each merger.
 <<Solver methods>>=
     void solve(AddBranchPtr addFunc);
 <<Solver method implementations>>=
@@ -56,7 +63,7 @@ void PhaseSolver::solve(AddBranchPtr addFunc)
 }
 @ %def solve
 For each possible value for a node's label, if we track the number of 
-nodes with each label, then it is possible to terminate the algorithm
+nodes with that label, then it is possible to terminate the algorithm
 early.  If the lowest labeled strong branch has label $\ell$, and
 there are no nodes with label $\ell - 1$, then the algorithm is done
 because the strong branch cannot merge with any weak branches, and
@@ -72,13 +79,14 @@ execution.
 	}
     #endif /* TERM_LABELS */
 @
+\subsection{Delayed Normalization}
 An alternative solving method involves `delayed normalization'.
 In this case, we process the branches as before, but during a
 merger, the tree is not totally renormalized.  In particular,
 we do not push excess up the weak branch.  This leaves some
 `pseudo-weak' branches, branches that we treat as weak, but they
-have excess in them that may, in fact, make them stong.  Therefore,
-after we run out of strong branches to merge, we need to scan for
+have excess in them that may, in fact, make them strong.  
+At the end of a phase, we need to scan for
 weak nodes with excess and complete normalization on them.  This
 may lead to the creation of more strong branches, in which case
 we need to continue executing the algorithm.
@@ -87,24 +95,15 @@ we need to continue executing the algorithm.
 <<Solver method implementations>>=
 void PhaseSolver::delayedNormalizeSolve(AddBranchPtr addFunc)
 {
-    int currentPhase = 0;
     addBranchFunc = addFunc;
     renormalizeFunc = &PhaseSolver::strongOnlyRenormalize;
 
-    for (NodePtr strongBranch = getLowestBranch(); 
-	 strongBranch != nil;
-	 strongBranch = getLowestBranch())
-    {
-	NodeLabel strongLabel =  strongBranch->getLabel();
-	if (strongLabel != currentPhase) {  // make this a chunk?
-	    currentPhase = strongLabel;
-	    addStrongBranch(*strongBranch);
-	    performDeferredNormalizations();
-	    TRACE(
-		trout << "Phase " << currentPhase << endl;
-	    )
-	    continue;
-	}
+    int currentPhase = 0;
+    NodePtr strongBranch = nil; 
+    NodeLabel strongLabel =  0;
+
+    while (TRUE) {
+	<<get strong branch - normalize if needed>>
 
 	if ((labelCount[strongLabel - 1] == 0) && 
 	    (strongLabel > INIT_WEAK_LABEL))
@@ -117,9 +116,61 @@ void PhaseSolver::delayedNormalizeSolve(AddBranchPtr addFunc)
     }
 }
 @ %def delayedNormalizeSolve
-To perform the delayed normalizations, we loop over all nodes
-looking for nodes with positive excess that aren't root nodes,
-and we perform a weak push.
+To get the next strong branch, we call [[getLowestBranch]], but that
+might return [[nil]] if the only remaining `strong' branches are
+still weak due to deferred normalization.  In that case, we perform
+the deferred normalizations and get the lowest branch again.
+<<get strong branch - normalize if needed>>=
+    strongBranch = getLowestBranch(); 
+    if (strongBranch == nil) {
+	performDeferredNormalizations();
+	<<get non-null branch>>
+    }
+@ 
+If we get [[nil]] again, we really are done and should break out
+of the loop.
+<<get non-null branch>>=
+	strongBranch = getLowestBranch();
+	if (strongBranch == nil) {
+	    break;
+	}
+@
+Once we have the branch, we look to see if its label is different
+than the current phase - i.e. are we trying to go to a new (higher)
+phase.  If so, we put the branch back and do the renomalizations,
+which might lead to a lower phase, which is why we put it back.
+<<get strong branch - normalize if needed>>=
+    strongLabel =  strongBranch->getLabel();
+    if (strongLabel != currentPhase) {
+	addStrongBranch(*strongBranch);	// should addHead
+	performDeferredNormalizations();
+@
+Now, we try again to get a new branch.  If the label is 
+different than the current phase, then we really are starting
+a new phase.
+<<get strong branch - normalize if needed>>=
+	<<get non-null branch>>
+	strongLabel =  strongBranch->getLabel();
+	if (strongLabel != currentPhase) {
+	    currentPhase = strongLabel;
+	    TRACE( trout << "Phase " << currentPhase << endl;)
+	}
+    }
+@ 
+To perform the delayed normalizations, we run down the list
+of deferred nodes.  For each node, we perform a complete weak push
+up to the weak root.  Note that it is possible for multiple nodes
+in a branch to be weak (actually, we're hoping for that).  This means
+that a deferred push could make a branch strong, and later we'll be
+doing another push to the same branch - i.e. a `weak' push within a
+strong branch.  
+
+This is fine, but it does mean that we cannot use
+the same `next' pointer to build the list of deferred weak nodes
+as we use for building the list of strong nodes.  A deferred weak node
+(still in the list of weak nodes) could be made into a strong branch
+root due to a push from a descendent node, which means it needs to be
+in the strong list.
 <<Solver methods>>=
     Boolean performDeferredNormalizations();
 <<Solver method implementations>>=
@@ -128,29 +179,56 @@ Boolean PhaseSolver::performDeferredNormalizations()
     int numWeakPushes = 0;
     int numSplittingPushes = 0;
 
-    for (int i = 1; i <= numNodes; i++) {
-	Node& node = nodes[i];
-	if (node.flag != 0) {
-	    if (node.getExcess() > 0) {
+    NodePtr currNode = deferredNodes;
+    while (currNode != nil) {
+	deferredNodes = currNode->next2;
+	currNode->next2 = nil;
+
+	if (currNode->flag != 0) {
+	    if (currNode->getExcess() > 0) {
 		numWeakPushes++;
-		TRACE( trout << "deferred push from node " << node.getId() 
-		             << " label " << node.getLabel() << endl;)
-		if (weakPush(node)) {
+		TRACE( trout << "deferred push from node " << currNode->getId() 
+		             << " label " << currNode->getLabel() << endl;)
+		if (weakPush(*currNode)) {
 		    numSplittingPushes++;
 		}
 	    } else {
-		TRACE( trout << "no deferred push from node " << node.getId() << endl; )
+		TRACE( trout << "no deferred push from node " << currNode->getId() << endl; )
 	    }
-	    node.flag = 0;
-	}
+	    currNode->flag = 0;
+	} 
+	currNode = deferredNodes;
     }
 
-    cout << "Performed " << numWeakPushes << " pushes with " 
-         << numSplittingPushes << " splitting pushes " << endl;
+    deferredNodes = nil;
+
+    TRACE( trout << "Performed " << numWeakPushes << " pushes with " 
+		 << numSplittingPushes << " splitting pushes"  << endl; )
 
     return (numSplittingPushes > 0) ? TRUE : FALSE;
 }
 @ %def performDeferredNormalizations
+There is another strategy for performing deferred normalizations that
+we have not yet implemented.  The basic idea is to try to push in parallel
+from the leaves up to the root.  What we'd like to acheive is that
+the excess from two parallel paths would merge at one node and we'd
+then only have to do one push from that node up to the root.
+
+We cannot really implement that directly.  We can approximate it by 
+maintaining another set of buckets indexed by node label.  We process
+it from maximum label down to zero.  We push excess from a node
+up along the path to the root so long as the parent has the same
+label.  As soon as we push flow up to a new labeled node, we queue
+that node to be processed later when we get to that label.  This 
+scheme might not detect the merger of two paths immediately, but it
+would be detected as soon as we crossed into a new label.
+
+This scheme might be an improvement due to coalescing the excess
+from multiple paths into a single push up to the root.  On the
+other hand, it involves a fair amount of overhead to be queueing
+and dequeueing the nodes all the time.  Not to mention, it's more
+compilicated, of course.
+
 \subsection{Processing Branches}
 We process the tree one branch at a time looking for mergers or
 relabeling nodes.  As soon as there is a merger, we stop processing
@@ -163,7 +241,11 @@ move the branch to the next bucket.
 As an optimization, we check to see if there are any nodes that
 we could possibly merge with before invesigating the branch.
 If there are no nodes with a label one less than ours, we just
-relabel the whole branch.
+relabel the whole branch.  This shouldn't happen very often
+any more, especially since we count the nodes with each label value
+and terminate early.  It might still be invoked as a side-effect of
+some initialization or normalization schemes - especially if we
+queue a branch with $\ell = 1$, the initial value for weak nodes.
 <<Solver methods>>=
     void processBranch(Node& root);
 <<Solver method implementations>>=
@@ -233,6 +315,14 @@ Processing neighbors is a bit different.  Here is where we look for
 a merger to a node with label exactly one less that ours
 (given that the arc has residual capacity).  
 If we find that, we will merge and return true immediately.
+
+{\em Note: there is a slight problem below.  We check for 
+a positive capacity on the arc (instead of non-negative), 
+but if we ever implemented a scheme
+where we didn't split immediately up zero residual capacity, we 
+would have zero-capacity arcs that are in the tree (i.e. the parent
+arc), but we wouldn't want to use them for mergers.  This would
+be a mess, but we could overcome it.}
 <<look for merger among neighbors>>=
     while (node.hasMoreNeighbors()) {
 	Edge& neighborEdge = node.getCurrentNeighbor();
@@ -278,8 +368,8 @@ void PhaseSolver::merge(Node& strong, Node& weak, Edge& edge)
 <<default Solver constructor>>=
     renormalizeFunc = &PhaseSolver::fullRenormalize;
 @
-Push excess from the former strong root, $r_s$ to the strong node, $s$,
-and one step beyond to the weak node, $w$.
+Push excess from the former strong root, [[src]] to the strong node 
+and one step beyond to the weak node, [[dest]].
 When this finishes, the remaining excess will be stored on
 the destination node.
 We save the parent pointer before the push in case there is a
@@ -355,6 +445,7 @@ Boolean PhaseSolver::weakPush(Node& src)
 	    if (currNode->getExcess() > 0 ||
 	        currNode->getExcess() == 0 && zeroDeficitIsStrong)
 	    {	
+		// should worry about l=1
 		addStrongBranch(*currNode);
 		result = TRUE;
 	    } 
@@ -381,15 +472,15 @@ Therefore, we can just relabel it here and now before adding it.
     if (currNode->getExcess() > 0 ||
 	currNode->getExcess() == 0 && zeroDeficitIsStrong)
     {
-	if (currNode->getLabel() == INIT_WEAK_LABEL) {
-	    relabelSubtree(*currNode);
-	}
+	//if (currNode->getLabel() == INIT_WEAK_LABEL) {
+	    //relabelSubtree(*currNode);
+	//}
 	addStrongBranch(*currNode);
 	result = TRUE;
     }
 @
 In the code above, we used some flags to control some of the
-behavior of the code while it's running.  We'll declare this
+behavior of the code while it's running.  We'll declare these
 public so that they can be easily inspected and tweaked.
 The first flag controls what happens if we push excess along an
 arc that matches the residual capacity.  We could choose to
@@ -400,7 +491,7 @@ flow along the arc, which will cause an immediate split.
 @
 The second flag controls how we regard zero-deficit nodes/branches during
 the execution of the algorithm (they are always weak when start the
-algorith).  If we treat a zero-deficit node as weak, when the algorithm
+algorithm).  If we treat a zero-deficit node as weak, when the algorithm
 finishes, the strong nodes will be a minimal source set.  However, this
 can lead to creating weak branch with root nodes whose label is greater
 than one.  This in turn makes it very difficult (impossible?) to bound 
@@ -442,9 +533,18 @@ branch that should be strong.
 void PhaseSolver::strongOnlyRenormalize(Node& strongRoot, Node& weakNode)
 {
     strongPush(strongRoot, weakNode);
-    weakNode.flag = 1;
+    if (weakNode.flag == 0) {
+	weakNode.flag = 1;
+	weakNode.next2 = deferredNodes;
+	deferredNodes = &weakNode;
+    }
 }
 @ %def strongOnlyRenormalize
+<<Solver data>>=
+    NodePtr deferredNodes;
+<<default Solver constructor>>=
+    deferredNodes = nil;
+@ %def deferredNodes
 Back in [[processSubtree]] we had a simple method call to increment
 the label on a node.  Normally, we would just call [[incrementLabel]]
 on the node, but we want to track how many nodes we have with each
@@ -495,27 +595,6 @@ void PhaseSolver::relabelSubtree(Node& node)
 		<< node.getLabel() << endl;);
 }
 @ %def relabelSubtree
-\subsection{Delayed Normailization}
-Delayed normalization will require a different merge function
-and a different solve function that knows to renormalize if it
-detects a termination condition.
-We will have a pointer to member function on the solver to
-select the proper merge function.  This will allow us to
-reuse [[processSubTree]].  The new merge function will just
-not perform weakPush, or maybe it will just push it one step.
-
-The renormalize function will scan all nodes looking for positive
-excess and parents. If so, we must have a weak node so we can just
-call weakPush.  We might want to push only one level up, but that 
-might be too much work.
-\subsection{Managing Strong Branches}
-We manage strong branches using an array of linked lists of Nodes.
-We refer to each such element in the array as a `bucket'.
-The buckets are indexed by the labels of the nodes.  Therefore,
-we need a bucket for each possible label - basically $n$ buckets.
-For each bucket, we keep the head and tail of the list so that
-we can manage them as either FIFO or LIFO.
-
 To clean up the management of the buckets, let's introduce a 
 simple class.
 
@@ -580,12 +659,37 @@ NodeBucket::removeHead()
     return result;
 }
 @ %def insertHead insertTail removeHead
-
+Here are a couple of obvious accessor functions.
+<<Node Bucket methods>>=
+    NodePtr getHead() const { return head; }
+    NodePtr getTail() const { return tail; }
 <<Solver data>>=
     NodeBucket*	buckets;
 <<default Solver constructor>>=
     buckets = nil;
 @ %def buckets
+<<Node Bucket methods>>=
+    void	dumpBucket();
+@ 
+\{em Note: this is in the `wrong' chunck Solver rather than bucket.}
+<<Solver method implementations>>=
+void 
+NodeBucket::dumpBucket()
+{
+    cout << "head = " << head;
+    if (head != nil) {
+	cout << " (" << head->getId() << "), tail = " 
+	     << tail << " (" << tail->getId() << ")" << endl;
+    } else {
+	cout << ", tail = " << tail << endl;
+	return;
+    }
+    for (NodePtr n = head; n != nil; n = n->getNext()) {
+	cout << n->getId() << "  ";
+    }
+    cout << endl;
+}
+@
 Because we process the lowest labeled branch, we need a way to find
 the strong branch quickly.  At the moment, we just search the list
 sequentially looking for the lowest labeled, non-empty bucket.  To
@@ -607,23 +711,34 @@ INLINE void PhaseSolver::addStrongBranch(Node& root)
     assert(zeroDeficitIsStrong ? (root.getExcess() >= 0) :
 				 (root.getExcess() > 0));
     CHECK_TREE(root, nil);
-    NodePtr next = root.getNext();
-    if (next != nil) {
-	assert(next->getLabel() == root.getLabel());
-	// it's already in the tree
-	return;
-    }
+    NodeLabel label = root.getLabel();
+
+    <<check if root is already in the tree>>
 
     // actually add the branch
     (this->*addBranchFunc)(root);
 
     // look for new lowest label
-    NodeLabel label = root.getLabel();
     if (label < lowestLabel) {
 	lowestLabel = label;
     }
 }
 @ %def addStrongBranch
+This is a little tricky because we don't have a flag that to tell
+us directly if the node is already in the tree.  Instead, we will
+just look at the next pointer.  If the pointer is non-null, then
+it must already be in a bucket.  However, the pointer might be
+null if it's the last node in the bucket, so we have to check for
+that too.  If it is in the bucket, we'll check its label against
+the label of the nodes already in the tree.
+<<check if root is already in the tree>>=
+    if ((root.getNext() != nil) || 
+        (buckets[label].getTail() == &root))
+    {
+	assert(buckets[label].getHead()->getLabel() == root.getLabel());
+	return;
+    }
+
 <<Solver data>>=
     AddBranchPtr addBranchFunc;
 <<default Solver constructor>>=
@@ -674,6 +789,7 @@ NodePtr PhaseSolver::getLowestBranch()
     while (lowestLabel < numNodes) {
 	result = buckets[lowestLabel].removeHead();
 	if (result != nil) {
+	    assert(result->getLabel() == lowestLabel);
 	    result->setNextNil();
 	    break;
 	} else {
