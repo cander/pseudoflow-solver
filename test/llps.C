@@ -12,7 +12,9 @@ usage()
     cerr << "Usage: llps [-d] [-f] input-graph flow-output" << endl;
     cerr << "\t -d   dump the final disposition of each node" << endl;
     cerr << "\t -f   write the flow values for each arc" << endl;
+    cerr << "\t -n   use delayed normalization solver" << endl;
     cerr << "\t -p   use the greedyPushTree method to initialize" << endl;
+    cerr << "\t -s   use the saturateAll method to initialize" << endl;
 }
 
 int 
@@ -21,10 +23,12 @@ main(int argc, char** argv)
     Boolean dumpNodes = FALSE;
     Boolean writeFlow = FALSE;
     void (PhaseSolver::* initFunc)() = &PhaseSolver::buildSimpleTree;
+    void (PhaseSolver::* solverFunc)(AddBranchPtr) = &PhaseSolver::solve;
+    AddBranchPtr addBranchFunc = &PhaseSolver::addBranchLifo;
 
     // parse arguments
     int ch;
-    while ((ch = getopt(argc, argv, "dfp")) != EOF) {
+    while ((ch = getopt(argc, argv, "dfnps")) != EOF) {
 	switch (ch) {
 	case 'd':
 	    dumpNodes = TRUE;
@@ -32,8 +36,14 @@ main(int argc, char** argv)
 	case 'f':
 	    writeFlow = TRUE;
 	    break;
+	case 'n':
+	    solverFunc = &PhaseSolver::delayedNormalizeSolve;
+	    break;
 	case 'p':
-	    initFunc = &PhaseSolver::buildGreedyPushTree;
+	    initFunc = &PhaseSolver::buildBlockingPathTree;
+	    break;
+	case 's':
+	    initFunc = &PhaseSolver::saturateAllArcs;
 	    break;
 	default:
 	    usage();
@@ -68,7 +78,7 @@ main(int argc, char** argv)
 	(solver.*initFunc)();
 	treeTimer.stop();
 
-	solver.solve();
+	(solver.*solverFunc)(addBranchFunc);
 	solveTimer.stop();
 
 	cout << "time to establish tree: " << treeTimer << endl;
