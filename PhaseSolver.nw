@@ -137,6 +137,7 @@ Boolean PhaseSolver::processSubtree(Node& node)
     // no merger
     incrementLabel(node);
     node.resetIterations();
+    STATS(numEmptyScans++);
     TRACE(trout << "node " << node.getId() << " relabled to "
 		<< node.getLabel() << endl;);
     return FALSE;
@@ -256,6 +257,8 @@ void PhaseSolver::merge(Node& strong, Node& weak, Edge& edge)
 		   << weak.getRootExcess() << "), cap "
 		   << edge.residCapacity(strong) << ", s-label "
 		   << strong.getLabel() << endl;)
+    STATS(numMergers++);
+
     Node& strongRoot = *strong.rehang();
     weak.addChild(strong, edge);
     CHECK_TREE(weak, weak.getParentEdge());
@@ -288,6 +291,7 @@ void PhaseSolver::strongPush(Node& src, Node& dest)
 	<<check for zero-capcity split>>
 
 	if (performedSplit) {
+	    STATS(numSplits++);
 	    if (isStrongNode(*currNode)) {	
 		addStrongBranch(*currNode);
 	    } 
@@ -303,6 +307,7 @@ It could be split or left alone.
 	currNode->getParentCapacity() == 0 &&
 	splitOnZeroCapacity) 
     {
+	STATS(numSplits++);
 	currNode->split();
 	performedSplit = TRUE;
     }
@@ -341,6 +346,7 @@ Boolean PhaseSolver::weakPush(Node& src)
 	<<check for zero-capcity split>>
 
 	if (performedSplit) {
+	    STATS(numSplits++);
 	    CHECK_TREE(*currNode, nil);
 	    if (isStrongNode(*currNode)) {
 		// should worry about l=1
@@ -2231,24 +2237,46 @@ node degrees.
 After we read an instance and solve it, we need to write the result
 out.  The Dimacs flow file is very similar to the instance in
 that every line is identified by an initial type character followed
-by arguments.  After printing header information, we print the
-total flow amount and the flow on each arc.
+by arguments.  
 <<Solver methods>>=
     void writeDimacsFlow(ostream& dout);
 <<Solver method implementations>>=
 void PhaseSolver::writeDimacsFlow(ostream& dout)
 {
-    <<write header>>
-    <<write flow amount>>
-    <<dump arcs>>
+    for (int i = 0; i < numEdges; i++) {
+	edges[i].writeFlow(dout) << endl;
+    }
 }
 @ %def writeDimacsFlow
-<<write header>>=
-    // dout << "c  instance: " << instanceFilename << endl;
-    dout << "c  numNodes: " << numNodes << endl;
-    dout << "c  numArcs: "  << numEdges << endl;
-    dout << "c" << endl;
+We collect various statistics while the program is running.
+This method prints them into the Dimacs output file as comments.
+<<Solver methods>>=
+    virtual void writeStats(ostream& dout);
+<<Solver method implementations>>=
+void PhaseSolver::writeStats(ostream& dout)
+{
+    <<write statistics>>
+    <<write flow amount>>
+}
+@ %def writeStats
+<<write statistics>>=
+    dout << "c  numNodes:      " << numNodes        << endl;
+    dout << "c  numArcs:       " << numEdges        << endl;
+    dout << "c  numMergers:    " << numMergers      << endl;
+    dout << "c  numSplits:     " << numSplits       << endl;
+    dout << "c  numEmtpyScans: " << numEmptyScans   << endl;
+    dout << "c  lowestLabel:   " << lowestLabel     << endl;
+    dout << "c"                                     << endl;
+<<Solver data>>=
+    int numMergers;
+    int numSplits;
+    int numEmptyScans;
+<<default Solver constructor>>=
+    numMergers = numSplits = numEmptyScans = 0;
 @
+To compute the flow amount, we just scan the neighbors of the source
+node and sum the flows on those arcs.  If we were paranoid, we'd also
+scan the sink arcs and compare the amounts.
 <<write flow amount>>=
     int flowAmt = 0;
     for (sourceNode->resetIterations(); 
@@ -2260,15 +2288,9 @@ void PhaseSolver::writeDimacsFlow(ostream& dout)
     }
     dout << "s " << flowAmt << endl;
 @
-To dump the edges, we just iterate over the array of edges and 
-print them out.
-<<dump arcs>>=
-    for (int i = 0; i < numEdges; i++) {
-	edges[i].writeFlow(dout) << endl;
-    }
-@
-Here is a new method to print the final disposition of all of the nodes
-in the graph.  
+Here is a method to print the final disposition of all of the nodes
+in the graph.  This should be called before converting the pseudoflow
+to a flow.
 <<Solver methods>>=
     void dumpNodes(ostream& out);
 <<header include files>>=
@@ -2277,6 +2299,7 @@ in the graph.
 void PhaseSolver::dumpNodes(ostream& out)
 {
     out << "c" << endl
+	<< "c  Node Dump" << endl
         << "c Node  id   excess  parent   label  strong/weak" << endl;
 
     for (int i = 1; i <= numNodes; i++) {
@@ -2298,7 +2321,7 @@ void PhaseSolver::dumpNodes(ostream& out)
 	     out << setw(8) <<
 		 (node.isStrong(FALSE) ? "strong" : "weak");
 	 }
-	 out << endl;
+	 out << endl << "c" << endl;
     }
 }
 @ %def dumpNodes
