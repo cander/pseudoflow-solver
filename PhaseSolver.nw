@@ -1962,28 +1962,22 @@ so we add them back.
 <<replace source and sink arcs>>=
     for (int i = 0 ; i < numEdges; i++) {
 	Edge& edge = edges[i];
-	if (edge.getSource() == sourceNode) {
-	    Node& srcAdjNode = *edge.getDest();
-	    srcAdjNode.addNeighbor(edge);
+	Node& edgeSource = *edge.getSource();
+	Node& edgeDest = *edge.getDest();
+	if (&edgeSource == sourceNode) {
+	    edgeDest.addNeighbor(edge);
 	} 
-	if (edge.getDest() == sinkNode) {
-	    Node& sinkAdjNode = *edge.getSource();
-	    sinkAdjNode.addNeighbor(edge);
+	if (&edgeDest == sinkNode) {
+	    edgeSource.addNeighbor(edge);
+	}
+	if (edge.getFlow() == 0) {
+	    if ((&edgeSource != sinkNode) && (&edgeDest != sourceNode)) {
+		edgeSource.removeNeighbor(edge);
+		edgeDest.removeNeighbor(edge);
+	    }
 	}
     }
 @ 
-As we search for the source or sink, there are a number of possible
-outcomes for a given search.  Obviously, we can either find or 
-not find the source/sink.  If we encounter a cycle, an edge could
-be part of the cycle or it could be on the path leading to the
-cycle.  Let's introduce an enumeration for the possibilites.  
-<<Solver public declarations>>=
-    typedef enum SearchStatus {
-	NOT_FOUND,
-	SOURCE_SINK,
-	IN_CYCLE,
-	OUT_CYCLE
-    } SearchStatus;
 <<Solver public declarations>>=
     void pushRootExcess(Node& node);
 <<Solver method implementations>>=
@@ -1992,14 +1986,12 @@ void PhaseSolver::pushRootExcess(Node& node)
     Boolean seekingSource = (node.getExcess() > 0) ? TRUE : FALSE;
     while (node.getExcess() != 0) {
 	currentMark++;
-	NodeId cycleNodeId = 0;
 	FlowAmount bottleCap = (seekingSource) ? 
 	                        node.getExcess() : -node.getExcess();
 
-	SearchStatus status = visitNode(node, node, bottleCap, 
-	                                seekingSource, cycleNodeId);
-	switch (status) {
-	case SOURCE_SINK:
+	Boolean found = visitNode(node, node, bottleCap, 
+	                                seekingSource);
+	if (found) {
 	    TRACE( trout << "Pushing " << bottleCap 
 	                 << " units of excess from " << node.getId() 
 			 << " (" << node.getExcess() << ")" << endl;)
@@ -2010,14 +2002,8 @@ void PhaseSolver::pushRootExcess(Node& node)
 		node.incrementExcess(bottleCap);
 		assert(node.getExcess() <= 0);
 	    }
-	    break;
-	case OUT_CYCLE:
-	    // nothing to do - try again
-	    break;
-	case IN_CYCLE:
-	    assert("A strong root shouldn't be in a cycle");
-	case NOT_FOUND:
-	    assert("There must be a path to the source/sink");
+	} else {
+	    assert("There must be a path to the source/sink" == nil);
 	}
 
 	if (node.getExcess() != 0) {
@@ -2033,19 +2019,21 @@ by the amount of the bottleneck capacity along the path.  We ignore
 arcs with zero residual capacity.
 
 The other possible outcome of our search is that we find a cycle.
-In this case we want to reduce the flow of all arcs along the cycle.
-Once we've backed out flow along the cycle, we want to return
-back to the strong/weak root to resume the search.
+Hoch97 says
+we want to reduce the flow of all arcs along the cycle.
+However, we have found that this is unnecessary.  If we find
+a node that we've already visited, we just ignore it and search
+for other paths to the source/sink.
 <<Solver public declarations>>=
-    SearchStatus visitNode(Node& node, Node& prevNode, FlowAmount& bottleCap, 
-    		  Boolean seekingSource, NodeId& cycleNodeId);
+    Boolean visitNode(Node& node, Node& prevNode, FlowAmount& bottleCap, 
+    		  Boolean seekingSource);
 <<Solver method implementations>>=
-PhaseSolver::SearchStatus 
+Boolean
 PhaseSolver::visitNode(Node& node, Node& prevNode, FlowAmount& bottleCap, 
-                       Boolean seekingSource, NodeId& cycleNodeId)
+                       Boolean seekingSource)
 {
     <<check for terminating recursion>>
-    SearchStatus result = NOT_FOUND;
+    Boolean result = FALSE;
     node.flag = currentMark;
 
     node.resetIterations();
@@ -2064,48 +2052,35 @@ PhaseSolver::visitNode(Node& node, Node& prevNode, FlowAmount& bottleCap,
 }
 @ %def visitNode
 We terminate the recursion when we find a cycle or the source/sink.
-For a cycle, we signal the cycle by setting [[cycleNodeId]] to the
-current node.  This also serves to mark the begining of the cycle,
-so that we know how far to back out the recursion.  If we simply found
-the source/sink, we just return.  For all of these cases, we could
-have eliminated the tail recursion by checking for it before
-visiting the node (in the [[while]] loop), but this seems simpler.
+We could have eliminated the tail recursion by checking for it
+before visiting the node (in the [[while]] loop), but this seems
+simpler.
 <<check for terminating recursion>>=
     if (node.flag == currentMark) {
-	assert(cycleNodeId == 0);
-	cycleNodeId = node.getId();
-	return IN_CYCLE;
+	return FALSE;
     } else if (&node == sourceNode) {
-	return (seekingSource) ? SOURCE_SINK : NOT_FOUND;
+	return (seekingSource) ? TRUE : FALSE;
     } else if (&node == sinkNode) {
-	return (seekingSource) ? NOT_FOUND : SOURCE_SINK;
+	return (seekingSource) ? FALSE : TRUE;
     }
 @
 To visit a node, we compute a new, tentative bottleneck capacity, but
 we do not assign it to the bottleneck parameter (which is passed by
-reference) until we find the source/sink (or cycle).  After visiting
+reference) until we find the source/sink.  After visiting
 the node (and its neighbors), if we found something, we will
-reduce the flow on the arc.  If we found the first node in a cycle,
-we clear the [[cycleNodeId]] to ignore the cycle and continue
-searching.  Otherwise, we want to break a the search and return
+reduce the flow on the arc, and break the search to return.
 to the calling function.
 <<visit neighbor node>>=
     FlowAmount newBottleCap = (bottleCap < residCap) ? bottleCap : residCap;
-    SearchStatus status = visitNode(neighbor, node, newBottleCap, 
-                                    seekingSource, cycleNodeId);
+    Boolean status = visitNode(neighbor, node, newBottleCap, 
+                                    seekingSource);
     // see if we found source/sink or a cycle
-    if (status != NOT_FOUND) {
+    if (status) {
 	bottleCap = newBottleCap;
 	reduceFlow(node, neighbor, neighborEdge, bottleCap, seekingSource);
-	if (cycleNodeId == node.getId()) {
-	    // we're back to the begining of the cycle
-	    assert(status == IN_CYCLE);
-	    cycleNodeId = 0;
-	    status = OUT_CYCLE;
-	} 
 	result = status;
 	break;		// stop checking neighbors
-    }
+    } 
 @ 
 When we reduce the flow on an edge, if the edge becomes saturated,
 we need to remove it from the appropriate node.  Currently, this
