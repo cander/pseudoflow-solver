@@ -2002,8 +2002,7 @@ void PhaseSolver::buildSpTree()
 	<<build weak branch>>
     }
 
-    //setSpInitialNodeStatus();
-    setInitialNodeStatus();
+    setSpInitialNodeStatus();
 }
 @ %def buildSpTree
 First, we need to set all the labels to infinity.
@@ -2178,11 +2177,6 @@ void PhaseSolver::convertToFlow()
 	}
 	if (node.getExcess() != 0) {
 	    pushRootExcess(node);
-	}
-
-	FlowAmount ex = node.computeExcess();
-	if (ex != 0) {
-	    cout << "Non-zero excess on node " << i << " = " << ex <<endl;
 	}
     }
 }
