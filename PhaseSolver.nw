@@ -90,47 +90,30 @@ void PhaseSolver::delayedNormalizeSolve(AddBranchPtr addFunc)
     int currentPhase = 0;
     addBranchFunc = addFunc;
     renormalizeFunc = &PhaseSolver::strongOnlyRenormalize;
-    //renormalizeFunc = &PhaseSolver::fullRenormalize;
-    Boolean newStrongBranches = TRUE;
 
-    while (newStrongBranches) {
-	NodePtr strongBranch = nil;
-	for (strongBranch = getLowestBranch(); 
-	     strongBranch != nil;
-	     strongBranch = getLowestBranch())
-	{
-	    NodeLabel strongLabel =  strongBranch->getLabel();
-		if ( strongLabel != currentPhase) {
-		    currentPhase = strongLabel;
-		    addStrongBranch(*strongBranch);
-		    performDeferredNormalizations();
-		    //TRACE(
-			//trout << "Phase " << currentPhase << endl;
-			cout << "Phase " << currentPhase << endl;
-		    //)
-		    continue;
-		}
-			//cout << "Phase " << currentPhase << endl;
-
-	    if ((labelCount[strongLabel - 1] == 0) && 
-		(strongLabel > INIT_WEAK_LABEL))
-	    {
-		cout << "Breaking at phase " << strongLabel << endl;
-		break;
-	    }
-
-	    processBranch(*strongBranch);
-		    // performDeferredNormalizations();
-
-	    /*
-	    if (labelCount[strongLabel] == 0) {
-		// we're about to start a new phase
-		newStrongBranches = performDeferredNormalizations();
-	    }
-	    */
+    for (NodePtr strongBranch = getLowestBranch(); 
+	 strongBranch != nil;
+	 strongBranch = getLowestBranch())
+    {
+	NodeLabel strongLabel =  strongBranch->getLabel();
+	if (strongLabel != currentPhase) {  // make this a chunk?
+	    currentPhase = strongLabel;
+	    addStrongBranch(*strongBranch);
+	    performDeferredNormalizations();
+	    TRACE(
+		trout << "Phase " << currentPhase << endl;
+	    )
+	    continue;
 	}
 
-	newStrongBranches = performDeferredNormalizations();
+	if ((labelCount[strongLabel - 1] == 0) && 
+	    (strongLabel > INIT_WEAK_LABEL))
+	{
+	    cout << "Breaking at phase " << strongLabel << endl;
+	    break;
+	}
+
+	processBranch(*strongBranch);
     }
 }
 @ %def delayedNormalizeSolve
@@ -147,10 +130,7 @@ Boolean PhaseSolver::performDeferredNormalizations()
 
     for (int i = 1; i <= numNodes; i++) {
 	Node& node = nodes[i];
-	//if ((node.getExcess() > 0) && (!node.isRootNode()) &&
-	    //(&node != sourceNode) && (&node != sinkNode)) 
-	if (node.flag != 0)
-	{
+	if (node.flag != 0) {
 	    if (node.getExcess() > 0) {
 		numWeakPushes++;
 		TRACE( trout << "deferred push from node " << node.getId() 
@@ -463,14 +443,6 @@ void PhaseSolver::strongOnlyRenormalize(Node& strongRoot, Node& weakNode)
 {
     strongPush(strongRoot, weakNode);
     weakNode.flag = 1;
-    /*
-    if (weakNode.isRootNode() && isStrongNode(weakNode)) {
-	if (weakNode.getLabel() == INIT_WEAK_LABEL) {
-	    relabelSubtree(weakNode);
-	}
-	addStrongBranch(weakNode);
-    }
-    */
 }
 @ %def strongOnlyRenormalize
 Back in [[processSubtree]] we had a simple method call to increment
