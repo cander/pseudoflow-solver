@@ -146,7 +146,7 @@ tarball: clean purec
 
 Node.o: Node.C Node.h types.h debug.h Edge.h EdgeList.h
 EdgeList.o: EdgeList.C EdgeList.h types.h debug.h
-Edge.o: Edge.C Edge.h Node.h types.h debug.h
+Edge.o: Edge.C Edge.h Node.h types.h debug.h EdgeList.h
 PhaseSolver.o: PhaseSolver.h PhaseSolver.C Node.h types.h debug.h Edge.h EdgeList.h
 Timer.o: Timer.h
 llps.o: PhaseSolver.h
