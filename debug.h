@@ -17,4 +17,18 @@
             abort();                            \
         }                                       \
     }
+
+#ifdef TRACING
+    #define trout cout
+    #define TRACE(print_expression) 	print_expression ;
+#else
+    #define TRACE(print_expression)	 ;
+#endif
+
+#ifdef PERF_TRACING
+    #define PERF_METER(expr)	expr
+#else
+    #define PERF_METER(expr) 	;
+#endif
+
 #endif /*DEBUG_H*/
