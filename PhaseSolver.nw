@@ -2222,7 +2222,6 @@ labeled.
 	    nodep->addChild(neighbor, *edgep);
 	}
     }
-
 @
 Once we have built the weak trees, we need to establish the initial status
 of all nodes.  We don't want to use the usual function, 
@@ -2245,7 +2244,6 @@ void PhaseSolver::setSpInitialNodeStatus()
 	Node& node = nodes[i];
 	if (node.getExcess() > 0) {
 	    <<set label to minimum of weak neighbors>>
-//node.setLabel(INIT_STRONG_LABEL);
 	    addStrongBranch(node);
 	}  else if (node.getLabel() == MAXINT) {
 	    // notice with cher graphs that some zero-deficit nodes are
@@ -2285,6 +2283,7 @@ label for strong nodes.
     if (minLabel < MAXINT) {
 	assert(minLabel < numNodes);
 	node.setLabel(minLabel + 1);
+	node.distance = minLabel + 1;
     } else {
 	node.setLabel(INIT_STRONG_LABEL);
     }
@@ -2345,7 +2344,7 @@ ever happening.
 INLINE void PhaseSolver::initGlobalRelabel()
 {
     if (relabelFrequency > 0.0) {
-	relabelCounter = numNodes;	// muliply by frequency?
+	relabelCounter = (int)(numNodes * relabelFrequency);
     } else {
 	relabelCounter = MAXINT;
     }
