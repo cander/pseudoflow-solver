@@ -76,9 +76,7 @@ execution.
 <<terminate early based on counting labels>>=
 #ifdef TERM_LABELS
 	if ((labelCount[strongLabel - 1] == 0) && 
-#ifdef DSHHACK
-(strongLabel > maxInitialLabel)  &&		// TTT dsh hack
-#endif
+(strongLabel > maxInitialLabel)  &&		// TTT DSHHACK
 	    (strongLabel > INIT_WEAK_LABEL))
 	{
 	    Boolean earlyTerm = FALSE;
@@ -86,16 +84,6 @@ execution.
 		<<perform last global relabel>>
 	    } else {
 		earlyTerm = TRUE;
-/*
-// XXX hack to ignore early termination because we're not doing global relabels
-int minTestLabel = max(strongLabel-15, 0);
-for (int i = strongLabel - 1; i > minTestLabel ; i--) {
-    if (labelCount[i] > 0) {
-	earlyTerm = FALSE;
-	break;
-    }
-}
-*/
 	    }
 
 	    if (earlyTerm) {
@@ -1675,13 +1663,12 @@ needs to saturate all source- and sink.adjacent edges and
 source-adjacent nodes 2, and label the others 1.
 classify the nodes as strong or weak.
 <<Solver methods>>=
-    void buildSimpleTree();
+    void buildSimpleTree(LabelMethod labelMethod);
 <<Solver method implementations>>=
-void PhaseSolver::buildSimpleTree()
+void PhaseSolver::buildSimpleTree(LabelMethod labelMethod)
 {
     saturateSourceSinkArcs();
-    setInitialNodeStatus();
-    globalRelabel();		// TTT -temp hack
+    setLabelsAndStatus(labelMethod);
 }
 @ %def buildSimpleTree
 The code to saturate the source- and sink-adjacent arcs is
@@ -1764,18 +1751,39 @@ in an optimal solution, but these do not have to be added back.
 @
 Again, since determining the initial status of nodes is apt
 to be a common subroutine of many initialization procedures,
-we have it as a separate method.  We iterate over
-the root nodes.  We label all nodes below a root with the
+we have it as a separate method.  
+<<Solver methods>>=
+    void setLabelsAndStatus(LabelMethod labelMethod);
+<<Solver method implementations>>=
+void PhaseSolver::setLabelsAndStatus(LabelMethod labelMethod)
+{
+    switch(labelMethod)
+    {
+	case LABELS_CONSTANT:
+	    setConstantLabels();
+	    break;
+	case LABELS_SINK_DIST:
+	    setSinkDistLabels();
+	    break;
+	case LABELS_DEFICIT_DIST:
+	    setInitialDistLabels();
+	    break;
+	default:
+	    assert("invalid labeling method" == nil);
+    }
+}
+@ %def setLabelsAndStatus
+We iterate over the root nodes.  We label all nodes below a root with the
 label based on the excess of the root.
 Anything with positive excess is assumed to be
 strong, and everything else is assumed to be weak.
 Strong nodes are added as strong branches.
-
 <<Solver methods>>=
-    void setInitialNodeStatus();
+    void setConstantLabels();
 <<Solver method implementations>>=
-void PhaseSolver::setInitialNodeStatus()
+void PhaseSolver::setConstantLabels()
 {
+cout << "setConstantLabels" << endl;
     for (int i = 1; i <= numNodes; i++) {
 	Node& node = nodes[i];
 	if (node.isRootNode()) {
@@ -1796,7 +1804,7 @@ void PhaseSolver::setInitialNodeStatus()
     // assert(labelCount[INIT_WEAK_LABEL] + 
    //          labelCount[INIT_STRONG_LABEL] == numNodes);
 }
-@ %def setInitialNodeStatus
+@ %def setConstantLabels
 <<Solver data>>=
     static const int INIT_STRONG_LABEL=2;
     static const int INIT_WEAK_LABEL=1;
@@ -1861,9 +1869,9 @@ we visit while pushing flow will be relabeled.  Basically, we
 are using the node's label as a marker indicating that we have
 visited the node.
 <<Solver methods>>=
-    void buildBlockingPathTree();
+    void buildBlockingPathTree(LabelMethod labelMethod);
 <<Solver method implementations>>=
-void PhaseSolver::buildBlockingPathTree()
+void PhaseSolver::buildBlockingPathTree(LabelMethod labelMethod)
 {
     saturateSourceSinkArcs();
 
@@ -1879,7 +1887,7 @@ void PhaseSolver::buildBlockingPathTree()
 	}
     }
 
-    setInitialNodeStatus();
+    setLabelsAndStatus(labelMethod);
 }
 @ %def bulidBlockingPathTree
 The real work in this greedy scheme is pushing the flow out of a
@@ -1903,6 +1911,8 @@ Boolean PhaseSolver::blockingPathPush(Node& node)
 {
     Boolean foundSink = FALSE;
     node.setLabel(INIT_STRONG_LABEL);
+// XXX this label counting is obsolete.  We can still set the labels
+// as a 'marked' flag, but we will reset the labels later
     labelCount[INIT_STRONG_LABEL]++;
 
     NodeExcess excess = node.getExcess();
@@ -1923,7 +1933,8 @@ Boolean PhaseSolver::blockingPathPush(Node& node)
 	<<recursively push flow out>>
     } else {
 	TRACE( trout << "can't push excess from " << node.getId() << endl; )
-	addStrongBranch(node);
+//XXX this causes problems when I go to reinsert it later
+// addStrongBranch(node);
     }
 
     return foundSink;
@@ -1961,7 +1972,9 @@ If we get lucky, we have pushed flow all the way to a sink-adjacent
 node.  If that node had a negative excess that exceeds the excess
 we are pushing out of [[node]], then we have have created a weak
 branch, but we have already labeled all of the nodes as strong.  As
-a slightly cheezy hack, we will undo the labeling.  Another solution
+a slightly cheezy hack, we will undo the labeling.  
+{\em obolete comment?: }
+Another solution
 would be a more sophisticated version of [[setInitialNodeStatus]] that
 finds roots of branches and labels all children strong or weak depending
 on the root.
@@ -1984,9 +1997,9 @@ on the root.
 \subsubsection{Splitting Path Initialization}
 Greedy push with an arbitrary number of splits allowed.
 <<Solver methods>>=
-    void buildGreedyPathTree();
+    void buildGreedyPathTree(LabelMethod labelMethod);
 <<Solver method implementations>>=
-void PhaseSolver::buildGreedyPathTree()
+void PhaseSolver::buildGreedyPathTree(LabelMethod labelMethod)
 {
     saturateSourceSinkArcs();
 
@@ -2003,7 +2016,7 @@ void PhaseSolver::buildGreedyPathTree()
 	}
     }
 
-    setInitialNodeStatus();
+    setLabelsAndStatus(labelMethod);
 }
 @ %def buildGreedyPathTree
 <<public Solver data>>=
@@ -2125,9 +2138,9 @@ Another simple initialization scheme is to saturate all arcs in
 the graph.  Then we classify each node as strong or weak
 depending on whether it has positive or negative excess.
 <<Solver methods>>=
-    void saturateAllArcs();
+    void saturateAllArcs(LabelMethod labelMethod);
 <<Solver method implementations>>=
-void PhaseSolver::saturateAllArcs()
+void PhaseSolver::saturateAllArcs(LabelMethod labelMethod)
 {
     saturateSourceSinkArcs();
 
@@ -2144,16 +2157,18 @@ void PhaseSolver::saturateAllArcs()
 	}
     }
 
+    setLabelsAndStatus(labelMethod);
+#if 0
 #ifdef DSHHACK
     setSinkDistLabels();		// TTT - DSH hack
 #else /* !DSHHACK*/
   #ifdef MYHACK
-    //globalRelabel();			// TTT - my hack
     setInitialDistLabels(FALSE);
   #else /* !MYHACK && !DSHHACK*/
     setInitialNodeStatus();
   #endif /*MYHACK*/
 #endif /* DSHHACK*/
+#endif /*0*/
 }
 @ %def saturateAllArcs
 \subsection{Distance Labeling}
@@ -2171,9 +2186,9 @@ label during this procedure.  When we are done, [[setSpInitialNodeStatus]]
 will set the labels of the strong nodes based on the labels of their
 weak neighbors.
 <<Solver methods>>=
-    void buildSpTree();
+    void buildSpTree(LabelMethod labelMethod);
 <<Solver method implementations>>=
-void PhaseSolver::buildSpTree()
+void PhaseSolver::buildSpTree(LabelMethod labelMethod)
 {
     saturateSourceSinkArcs();
     <<initialize all node labels>>
@@ -2251,7 +2266,7 @@ labeled.
 @
 Once we have built the weak trees, we need to establish the initial status
 of all nodes.  We don't want to use the usual function, 
-[[setInitialNodeStatus]], because it will set all the  weak labels to one
+[[setConstantLabels]], because it will set all the  weak labels to one
 even though we have just established exact distance labels.  Similarly,
 we don't want the strong nodes to all have label two because their
 (weak) neighbors all have labels much higher.  Therefore, we have our
@@ -2324,10 +2339,10 @@ label for strong nodes.
 During the execution of the algorithm, regardless of the initialization
 method used we can periodically relabel nodes based on their distances to the 
 sink in the residual graph.   Setting the labels this way `guides' the excess
-from the strong nodes toward the sink node{\footnote Note that because
+from the strong nodes toward the sink node.\footnote{Note that because
 the saturate-all method may create deficit nodes that are not adjacent to the
 sink, we actually set the distances to the nearest deficit node.  Therefore,
-we are directing flow towards deficit nodes rather than the sink.}.  Because global relabeling is 
+we are directing flow towards deficit nodes rather than the sink.}  Because global relabeling is 
 a rather expensive operation, we don't want to perform it too often.
 
 We cannot necessarily blindly set the
@@ -2573,8 +2588,6 @@ INLINE void PhaseSolver::increaseNodeLabel(Node& node)
 	NodeLabel newLabel = min(node.distance, node.minChildLabel);
 	newLabel = max(newLabel, oldLabel + 1);
 	setLabel(node, newLabel);
-	STATS(numRelabels++);
-	STATS(if ((newLabel - oldLabel) > 1) numLabelSkips++; );
 	if (node.distance < newLabel) {
 	    node.distance = newLabel;
 	}
@@ -2590,11 +2603,13 @@ INLINE void PhaseSolver::increaseNodeLabel(Node& node)
 <<Solver method implementations>>=
 void PhaseSolver::setSinkDistLabels()
 {
+cout << "setSinkDistLabels" << endl;
     resetQ();
     <<initialize distances>>
     <<load the bfs queue with sink-adj nodes>>
     <<perform bfs distance labeling in orig graph>>
-    setSpInitialNodeStatus();	
+    //setSpInitialNodeStatus();	
+    <<scan nodes and put in buckets>>
 
     IFDEBUG( checkBranches(); );
 }
@@ -2636,7 +2651,7 @@ First, we need to set all the labels to infinity.
 	(neighbor.distance > dist))
     {
 	    neighbor.distance = dist;
-	    neighbor.setLabel(dist);
+	    // neighbor.setLabel(dist);  - using relabelBranch
 	    putNodeQ(neighbor);
     }
 
@@ -2645,10 +2660,11 @@ This function sets distance labels to the nearest negative deficit node,
 and it sets the node labels to the highest value possible while still
 observing monotonicity.  Then, it puts the strong nodes in buckets.
 <<Solver methods>>=
-    void setInitialDistLabels(Boolean sinkAdjOnly);
+    void setInitialDistLabels();
 <<Solver method implementations>>=
-void PhaseSolver::setInitialDistLabels(Boolean sinkAdjOnly)
+void PhaseSolver::setInitialDistLabels()
 {
+cout << "setInitialDistLabels()" << endl;
     resetQ();
     <<initialize distances and load queue>>
     <<perform bfs distance labeling>>
@@ -2658,7 +2674,7 @@ void PhaseSolver::setInitialDistLabels(Boolean sinkAdjOnly)
 }
 @ %def setInitialDistLabels
 We establish initial distances and labels.  All nodes get an initial label
-of one (INIT_WEAK_LABEL).  Deficit nodes get a distance of one, and they
+of one ([[INIT_WEAK_LABEL]]).  Deficit nodes get a distance of one, and they
 get inserted into the BFS queue.  All other nodes get an infinite distance.
 <<initialize distances and load queue>>=
     for (int i = 1; i <= numNodes; i++) {
@@ -2694,10 +2710,12 @@ we set its distance and label, and put it at the end of the queue
 for subsequence processing.
 <<set zero-deficit neighbor distance as needed>>=
     Node& neighbor = *edgep->getOtherNode(nodep);
-    if ((neighbor.distance > dist) && (edgep->residCapacity(neighbor) > 0))
+    if ((neighbor.distance > dist) && 
+//	(edgep->getDest() == nodep)) 		// want an 'in' arc
+    (edgep->residCapacity(neighbor) > 0))	// hack - no resid cap check
     {
 	    neighbor.distance = dist;
-	    neighbor.setLabel(dist);
+	    //neighbor.setLabel(dist); 	// don't label - using relabelBranch
 	    putNodeQ(neighbor);
     }
 @ After we have performed the BFS, the labels are all initialized to
@@ -2713,12 +2731,15 @@ putting it in a bucket).  Other strong nodes go into buckets, and
 any other nodes are initialized and ready to go.  For all nodes,
 we update the label count appropriately.
 <<scan nodes and put in buckets>>=
-maxInitialLabel = 0;		// XXX dsh hack
+    maxInitialLabel = 0;		// DSHHACK
     for (int i = 1; i <= numNodes; i++) {
 	Node& node = nodes[i];
+	if (node.isRootNode()) {
+	    relabelBranch(node);
+	}
 	if (node.getExcess() > 0) {
 	    if (node.distance == MAXINT) {
-		node.setLabel(numNodes);
+		setBranchLabel(node, numNodes);
 	    } else {
 		addStrongBranch(node);
 	    }
@@ -2731,7 +2752,10 @@ maxInitialLabel = 0;		// XXX dsh hack
 	}
 	labelCount[node.getLabel()]++;
 	node.resetIterations();
-if (node.getLabel() > maxInitialLabel) maxInitialLabel = node.getLabel();
+	if (node.getLabel() > maxInitialLabel) {
+	    // DSHHACK
+	    maxInitialLabel = node.getLabel();
+	}
     }
 @
 \subsubsection{Queue of Nodes}
