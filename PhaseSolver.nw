@@ -3484,6 +3484,37 @@ at the very least.
 	}
     }
     */
+@ Here's a little debug code to print out the capacity of the adjusted
+source and sink arcs.
+<<decrease capacity on arcs into sink>>=
+#ifdef TRACING
+    FlowAmount sourceCapacity = 0;
+    for(sourceNode->resetIterations();
+        sourceNode->hasMoreNeighbors();
+	sourceNode->advanceNeighbors())
+    {
+	Edge& edge = sourceNode->getCurrentNeighbor();
+	Node& sourceAdjNode = *edge.getDest();
+	if (&sourceAdjNode != sourceNode) {
+	    sourceCapacity += edge.getCapacity();
+	}
+    }
+    TRACE(trout << "Old lambda " << oldLambda << " new lambda " << newLambda << endl; );
+    TRACE(trout << "Source capacity: " << sourceCapacity << endl; );
+
+    FlowAmount sinkCapacity = 0;
+    for(sinkNode->resetIterations();
+        sinkNode->hasMoreNeighbors();
+	sinkNode->advanceNeighbors())
+    {
+	Edge& edge = sinkNode->getCurrentNeighbor();
+	Node& sinkAdjNode = *edge.getSource();
+	if (&sinkAdjNode != sinkNode) {
+	    sinkCapacity += edge.getCapacity();
+	}
+    }
+    TRACE( trout << "Sink capacity: " << sinkCapacity << endl; );
+#endif /*TRACING*/
 
 <<Solver methods>>=
     void labelSubtree(Node& node, NodeLabel l);
