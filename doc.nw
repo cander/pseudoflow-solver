@@ -20,6 +20,22 @@ of the pseudoflow algorithm.
 
 \tableofcontents
 
+\section{Introduction}
+
+Currently, we support the following variant to control
+the execution of the algorithm:
+\begin{itemize}
+    \item Initial normalized tree
+    \item Strong branch management
+    \item Merging - delayed normalization
+\end{itemize}
+
+The latter two are controlled by pointer to functions.  Although this
+involves some extra overhead, it is the most flexible method for
+experimenting with new variants.  In the future, if we want maximum
+performance to compare to other maximum flow programs, we can use
+conditional compilation.
+
 \input{allcode.tex}
 
 \bibliographystyle{plain}

@@ -27,6 +27,10 @@ We also need to know the source and sink nodes in the graph.
     sourceNode = sinkNode = nil;
 @ %def sourceNode sinkNode
 \subsection{Solving}
+At the highest level, solving is pretty simple: we select the
+lowest labeled strong branch, process it looking for mergers and 
+relabling nodes that do not merge, and continue until we cannot
+find a strong branch.
 <<Solver methods>>=
     void solve();
 <<Solver method implementations>>=
@@ -42,262 +46,28 @@ void PhaseSolver::solve()
 		trout << "Phase " << currentPhase << endl;
 	    }
 	)
-#ifdef TERM_LABELS
+	<<terminate early based on counting labels>>
+	processBranch(*strongBranch);
+	strongBranch = getLowestBranch();
+    }
+}
+@ %def solve
+For each possible value for a node's label, if we track the number of 
+nodes with each label, then it is possible to terminate the algorithm
+early.  If the lowest labeled strong branch has label $\ell$, and
+there are no nodes with label $\ell - 1$, then the algorithm is done
+because the strong branch cannot merge with any weak branches, and
+the labels of the strong branches will only increase further during
+execution.
+<<terminate early based on counting labels>>=
+    #ifdef TERM_LABELS
 	if ((labelCount[strongLabel - 1] == 0) && 
 	    (strongLabel > INIT_WEAK_LABEL))
 	{
 	    cout << "Early termination" << endl;
 	    break;
 	}
-#endif /* TERM_LABELS */
-	processBranch(*strongBranch);
-	strongBranch = getLowestBranch();
-    }
-
-    // convert to flow
-}
-@ %def solve
-\subsection{Establishing an Initial Normalized Tree}
-There are a number of different ways that we can build an initial,
-normalized tree.  Building the initial tree is totally independent
-of the execution of the algorithm.  
-
-At the very least,
-we need to saturate all source- and sink.adjacent edges, label the 
-source-adjacent nodes 2, and label the others 1.
-Then we need to classify the nodes as strong or weak.
-There is a slight trick in handling nodes that are
-adjacent to both the source and sink.  We increment or decrement
-their excess as we process the edges.  Afterwards, when we scan
-the nodes, we look at the final excess to determine if the 
-node is strong (labeled 2) or weak (labeled 1).
-
-<<Solver methods>>=
-    void buildSimpleTree();
-<<Solver method implementations>>=
-void PhaseSolver::buildSimpleTree()
-{
-    saturateSourceSinkArcs();
-
-    setInitialNodeStatus();
-}
-@ %def buildSimpleTree
-The code to saturate the source- and sink-adjacent arcs is
-broken out into a separate function because many schemes
-from building the initial tree will want start by saturating
-these arcs.  When we saturate an edge, we remove it from the list
-of arcs for the node.  This will prevent flow from going back to
-either the source or the sink without having to special-case these
-arcs at run-time.
-<<Solver methods>>=
-    void saturateSourceSinkArcs();
-<<Solver method implementations>>=
-void PhaseSolver::saturateSourceSinkArcs()
-{
-    for (int i = 0 ; i < numEdges; i++) {
-	Edge& edge = edges[i];
-	if (edge.getTail() == sourceNode) {
-	    FlowAmount excess = edge.saturate();
-	    Node& srcAdjNode = *edge.getHead();
-	    srcAdjNode.removeNeighbor(edge);
-	    srcAdjNode.incrementExcess(excess);
-	} else if (edge.getHead() == sinkNode) {
-	    FlowAmount excess = edge.saturate();
-	    Node& sinkAdjNode = *edge.getTail();
-	    sinkAdjNode.decrementExcess(excess);
-	    sinkAdjNode.removeNeighbor(edge);
-	}
-    }
-}
-@ %def saturateSourceSinkArcs
-Again, since determining the initial status of nodes is apt
-to be a common subroutine of many initialization procedures,
-we have it as a separate method.  We simply iterate over
-all of the nodes setting their initial labels based on their
-excess.  Anything with positive excess is assumed to be
-strong, and everything else is assumed to be weak.
-
-{\em Note:} this code assumes that each node is it's own
-branch - i.e. no trees or paths have been built up.  
-If we have built any branches, then the non-root nodes will
-have zero excess, but we cannot immediately discern their
-status based simply on their excess.  In order to make this
-method useful to schemes that may build up branches, we
-check the label of the branch.  If it is still at the initial value
-from when the node was created, we assume it is safe for us to
-label it.
-<<Solver methods>>=
-    void setInitialNodeStatus();
-<<Solver method implementations>>=
-void PhaseSolver::setInitialNodeStatus()
-{
-    for (int i = 1; i <= numNodes; i++) {
-	Node& node = nodes[i];
-	if (node.getLabel() == Node::INITIAL_LABEL) {
-	    if (node.getExcess() > 0) {	// ZERO DEFICIT
-		node.setLabel(INIT_STRONG_LABEL);
-		labelCount[INIT_STRONG_LABEL]++;
-		addStrongBranch(node);
-	    } else {
-		node.setLabel(INIT_WEAK_LABEL);
-		labelCount[INIT_WEAK_LABEL]++;
-	    }
-	}
-    }
-}
-@ %def setInitialNodeStatus
-<<Solver data>>=
-    int* labelCount;
-<<default Solver constructor>>=
-    labelCount = nil;
-@ %def labelCount 
-<<Solver data>>=
-    static const int INIT_STRONG_LABEL=2;
-    static const int INIT_WEAK_LABEL=1;
-    static const int INIT_ZERO_LABEL=1;
-@ %def INIT_STRONG_LABEL INIT_WEAK_LABEL INIT_ZERO_LABEL
-A simple extension to the idea of just simply saturating the
-source- and sink-adjacent arcs is to try to push flow from the
-source-adjacent nodes into the interior of the graph.  Our
-objective is to try to build some simple but large components
-with a minimum of work.
-
-This is a bit more involved than it initially appeared.
-The first thing to note is that the components we will build will
-be paths.  This means that we can only push flow out of a node
-along a single outgoing arc.  Also, we can only push flow into
-a node from a single neighbor.  Otherwise, we might end up building
-components that are not trees.
-
-Because we wish to build components that are as large as possible
-(rather than creating lots of small components), we want to avoid
-splitting edges.  However, this can be problematic because many of
-the random graphs we test with have more in-capacity than out-capacity
-for the source-adjacent nodes.  If we blindly avoid splitting, we
-won't move any flow from the source-adjacent nodes because they
-have more excess than out-capacity.  
-
-One final complication is that if we sucessfully push flow into a
-node and then out of it, then its excess will be zero, but the node
-should be regarded as strong because it belongs to a strong branch
-(path).
-
-With all of this in mind, we proceed by finding nodes with 
-positive excess that still have their initial label (zero).
-We then push the flow out of the node and expect that every node
-we visit while pushing flow will be relabeled.  Basically, we
-are using the node's label as a marker indicating that we have
-visited the node.
-
-<<Solver methods>>=
-    void buildGreedyPushTree();
-<<Solver method implementations>>=
-void PhaseSolver::buildGreedyPushTree()
-{
-    saturateSourceSinkArcs();
-
-    for (int i = 1; i <= numNodes; i++) {
-	Node& node = nodes[i];
-	if ((node.getExcess() > 0) && 
-	    (node.getLabel() == Node::INITIAL_LABEL))
-	{	
-	    pushFlowOut(node);
-	}
-    }
-
-    setInitialNodeStatus();
-}
-@ %def buildGreedyPushTree
-The real work in this greedy scheme is pushing the flow out of a
-node.  This recursive function finds the `best' edge to push the
-flow out on, and then we push the flow.  When we push flow out,
-we make this node a child of the node at the other end of the arc,
-and then we try to push flow out of that node (hence the recursion).
-As we visit each node, we relabel it to prevent visiting the same node
-more than once.
-<<Solver methods>>=
-    Boolean pushFlowOut(Node& node);
-<<Solver method implementations>>=
-Boolean PhaseSolver::pushFlowOut(Node& node)
-{
-    Boolean foundSink = FALSE;
-    node.setLabel(INIT_STRONG_LABEL);
-    labelCount[INIT_STRONG_LABEL]++;
-
-    NodeExcess excess = node.getExcess();
-    Edge* bestOutEdge = nil;
-    <<find best out edge>>
-
-    FlowAmount flow = excess;
-    if (bestOutEdge != nil) {
-	Node& otherNode = *bestOutEdge->getOtherNode(&node);
-	TRACE( trout << "push positive excess (" << flow << " from " 
-		     << node.getId() << " to " << otherNode.getId() << endl);
-	         
-	bestOutEdge->increaseFlow(flow);
-	node.decrementExcess(flow);
-	otherNode.incrementExcess(flow);
-	otherNode.addChild(node, *bestOutEdge);
-
-	<<recursively push flow out>>
-    } else {
-	TRACE( trout << "can't push excess from " << node.getId() << endl; )
-	addStrongBranch(node);
-    }
-
-    return foundSink;
-}
-@ %def pushFlowOut
-To find the best out edge, we iterate over all of the edges looking
-for one that has at least enough capacity to handle the excess.  Also,
-the edge must refer to a node that we haven't visited yet, as indicated
-by its label.  If we find multiple edges with sufficient capacity, we
-take the one with the least capacity.  Alternatively, we could take
-the first fit, but we do not expect that scanning every edge will be
-too burdensome.
-<<find best out edge>>=
-    node.resetIterations();
-    while (node.hasMoreNeighbors()) {
-	Edge& edge = node.getCurrentNeighbor();
-	if (edge.getOtherNode(&node)->getLabel() == Node::INITIAL_LABEL) {
-	    if (edge.residCapacity(node) >= excess) {
-		if (bestOutEdge == nil) {
-		    bestOutEdge = &edge;
-		} else if (bestOutEdge->residCapacity(node) > edge.residCapacity(node)) {
-		    bestOutEdge = &edge;
-		}
-	    }
-	    // else, could also track max capacity edge to split here
-	}
-	node.advanceNeighbors();
-    }
-    node.resetIterations();
-@
-One would think that continuing to push flow out would be pretty simple:
-just call [[pushFlowOut(otherNode)]].  However, it's not that easy.
-If we get lucky, we have pushed flow all the way to a sink-adjacent
-node.  If that node had a negative excess that exceeds the excess
-we are pushing out of [[node]], then we have have created a weak
-branch, but we have already labeled all of the nodes as strong.  As
-a slightly cheezy hack, we will undo the labeling.  Another solution
-would be a more sophisticated version of [[setInitialNodeStatus]] that
-finds roots of branches and labels all children strong or weak depending
-on the root.
-<<recursively push flow out>>=
-    if (otherNode.getExcess() > 0) {	// ZERO_DEFICIT
-	foundSink = pushFlowOut(otherNode);
-    } else {
-	TRACE( trout << "found sink-adjacent node " << otherNode.getId() << endl;)
-	foundSink = TRUE;
-	CHECK_TREE(otherNode, nil);
-    }
-
-    if (foundSink) {
-	TRACE( trout << "relabeling "  << node.getId() << " as weak " << endl;)
-	labelCount[INIT_STRONG_LABEL]--;
-	node.setLabel(INIT_WEAK_LABEL);
-	labelCount[INIT_WEAK_LABEL]++;
-    }
+    #endif /* TERM_LABELS */
 @
 \subsection{Processing Branches}
 We process the tree one branch at a time looking for mergers or
@@ -380,7 +150,7 @@ and that generates a merger we return immediately.
 Processing neighbors is a bit different.  Here is where we look for
 a merger to a node with label exactly one less that ours
 (given that the arc has residual capacity).  
-Given that, we will merge and return true immediately.
+If we find that, we will merge and return true immediately.
 <<look for merger among neighbors>>=
     while (node.hasMoreNeighbors()) {
 	Edge& neighborEdge = node.getCurrentNeighbor();
@@ -397,13 +167,7 @@ Given that, we will merge and return true immediately.
 This function 
 rehangs the strong branch from the strong node, adds the
 merger arc from $s$ to $w$, and pushes the excess from the
-old strong root to the weak root.  If pushing the excess results
-in any splitting, this function returns the lowest label of the
-newly created branches.  Note that only splits within the
-weak branch can yield labels less that $\ell$.  Because new 
-branches with labels less than $\ell$ are the only ones that
-will interrupt phase $\ell$, we are only concerned about such
-splits within the weak branch.
+old strong root to the weak root.  
 <<Solver methods>>=
     void merge(Node& strong, Node& weak, Edge& edge);
 <<Solver method implementations>>=
@@ -557,10 +321,14 @@ INLINE void PhaseSolver::incrementLabel(Node& node)
     node.incrementLabel();
 }
 @ %def incrementLabel
-We use this code to be able to know that a branch cannot merge with
-any weak nodes.  In this case we need to increment the label
+When we know that a branch cannot merge with
+any weak nodes, we need to increment the label
 of the branch, and all of its children that have the same label.
 This is really a stripped down version of [[processSubtree]].
+Given the early termination code based on counting nodes and labels,
+this code isn't usually needed.  It might be useful for some
+tree initialization schemes that result in strong branches with
+the initial weak label.
 <<Solver methods>>=
     void relabelSubtree(Node& node);
 <<Solver method implementations>>=
@@ -583,6 +351,19 @@ void PhaseSolver::relabelSubtree(Node& node)
 		<< node.getLabel() << endl;);
 }
 @ %def processSubtree
+\subsection{Delayed Normailization}
+Delayed normalization will require a different merge function
+and a different solve function that knows to renormalize if it
+detects a termination condition.
+We will have a pointer to member function on the solver to
+select the proper merge function.  This will allow us to
+reuse [[processSubTree]].  The new merge function will just
+not perform weakPush, or maybe it will just push it one step.
+
+The renormalize function will scan all nodes looking for positive
+excess and parents. If so, we must have a weak node so we can just
+call weakPush.  We might want to push only one level up, but that 
+might be too much work.
 \subsection{Managing Strong Branches}
 We manage strong branches using an array of linked lists of Nodes.
 We refer to each such element in the array as a `bucket'.
@@ -613,12 +394,7 @@ by some sort of heap.
     lowestLabel = 0;
 @ %def lowestLabel
 Adding a branch just requires finding the bucket based on the branch's
-label, and inserting it into the list.  For simplicity, we add to
-the head of the list.  This probably doesn't make any difference
-(FIFO vs. LIFO) in a lowest label algorithm, but in the future, we
-might want to experiment with this.  After adding the branch,
-we need to see if the new branch has a lower label than our previous
-lowest labeled branch.
+label, and inserting it into the list.  
 <<Solver methods>>=
     void addStrongBranch(Node& root);
 <<Solver method implementations>>=
@@ -696,15 +472,253 @@ NodePtr PhaseSolver::getLowestBranch()
     return result;
 }
 @ %def getLowestBranch
-<<Solver inline implementations>>=
-<<C++ overhead>>=
-    PhaseSolver();
+\subsection{Establishing an Initial Normalized Tree}
+There are a number of different ways that we can build an initial,
+normalized tree.  Building the initial tree is totally independent
+of the execution of the algorithm.  
+
+\subsubsection{Simple Initialization}
+At the very least, this simplest initialization
+needs to saturate all source- and sink.adjacent edges and
+source-adjacent nodes 2, and label the others 1.
+classify the nodes as strong or weak.
+<<Solver methods>>=
+    void buildSimpleTree();
 <<Solver method implementations>>=
-PhaseSolver::PhaseSolver()
+void PhaseSolver::buildSimpleTree()
 {
-    <<default Solver constructor>>
+    saturateSourceSinkArcs();
+    setInitialNodeStatus();
 }
+@ %def buildSimpleTree
+The code to saturate the source- and sink-adjacent arcs is
+broken out into a separate function because many schemes
+for building the initial tree will want start by saturating
+these arcs.  When we saturate an edge, we remove it from the list
+of arcs for the node.  This will prevent flow from going back to
+either the source or the sink without having to special-case these
+arcs at run-time.
+<<Solver methods>>=
+    void saturateSourceSinkArcs();
+<<Solver method implementations>>=
+void PhaseSolver::saturateSourceSinkArcs()
+{
+    for (int i = 0 ; i < numEdges; i++) {
+	Edge& edge = edges[i];
+	if (edge.getTail() == sourceNode) {
+	    FlowAmount excess = edge.saturate();
+	    Node& srcAdjNode = *edge.getHead();
+	    srcAdjNode.removeNeighbor(edge);
+	    srcAdjNode.incrementExcess(excess);
+	} else if (edge.getHead() == sinkNode) {
+	    FlowAmount excess = edge.saturate();
+	    Node& sinkAdjNode = *edge.getTail();
+	    sinkAdjNode.decrementExcess(excess);
+	    sinkAdjNode.removeNeighbor(edge);
+	}
+    }
+}
+@ %def saturateSourceSinkArcs
+Again, since determining the initial status of nodes is apt
+to be a common subroutine of many initialization procedures,
+we have it as a separate method.  We simply iterate over
+all of the nodes setting their initial labels based on their
+excess.  Anything with positive excess is assumed to be
+strong, and everything else is assumed to be weak.
+Strong nodes are added as strong branches.
+
+{\em Note:} this code assumes that each node is it's own
+branch - i.e. no trees or paths have been built up.  
+If we have built any branches, then the non-root nodes will
+have zero excess, but we cannot immediately discern their
+status based simply on their excess.  In order to make this
+method useful to schemes that may build up branches, we
+check the label of the branch.  If it is still at the initial value
+from when the node was created, we assume it is safe for us to
+label it.
+<<Solver methods>>=
+    void setInitialNodeStatus();
+<<Solver method implementations>>=
+void PhaseSolver::setInitialNodeStatus()
+{
+    for (int i = 1; i <= numNodes; i++) {
+	Node& node = nodes[i];
+	if (node.getLabel() == Node::INITIAL_LABEL) {
+	    if (node.getExcess() > 0) {	// ZERO DEFICIT
+		node.setLabel(INIT_STRONG_LABEL);
+		labelCount[INIT_STRONG_LABEL]++;
+		addStrongBranch(node);
+	    } else {
+		node.setLabel(INIT_WEAK_LABEL);
+		labelCount[INIT_WEAK_LABEL]++;
+	    }
+	}
+    }
+}
+@ %def setInitialNodeStatus
+<<Solver data>>=
+    int* labelCount;
+<<default Solver constructor>>=
+    labelCount = nil;
+@ %def labelCount 
+<<Solver data>>=
+    static const int INIT_STRONG_LABEL=2;
+    static const int INIT_WEAK_LABEL=1;
+    static const int INIT_ZERO_LABEL=1;
+@ %def INIT_STRONG_LABEL INIT_WEAK_LABEL INIT_ZERO_LABEL
+\subsubsection{Blocking Path Initialization}
+A simple extension to the idea of just simply saturating the
+source- and sink-adjacent arcs is to try to push flow from the
+source-adjacent nodes into the interior of the graph.  Our
+objective is to try to build some simple but large components
+with a minimum of work.
+
+This is a bit more involved than it initially appeared.
+The first thing to note is that the components we will build will
+be paths.  This means that we can only push flow out of a node
+along a single outgoing arc.  Also, we can only push flow into
+a node from a single neighbor.  Otherwise, we might end up building
+components that are not trees.
+
+Because we wish to build components that are as large as possible
+(rather than creating lots of small components), we want to avoid
+splitting edges.  However, this can be problematic because many of
+the random graphs we test with have more in-capacity than out-capacity
+for the source-adjacent nodes.  If we blindly avoid splitting, we
+won't move any flow from the source-adjacent nodes because they
+have more excess than out-capacity.  
+
+One final complication is that if we sucessfully push flow into a
+node and then out of it, then its excess will be zero, but the node
+should be regarded as strong because it belongs to a strong branch
+(path).
+
+With all of this in mind, we proceed by finding nodes with 
+positive excess that still have their initial label.
+We then push the flow out of the node and expect that every node
+we visit while pushing flow will be relabeled.  Basically, we
+are using the node's label as a marker indicating that we have
+visited the node.
+
+<<Solver methods>>=
+    void buildGreedyPushTree();
+<<Solver method implementations>>=
+void PhaseSolver::buildGreedyPushTree()
+{
+    saturateSourceSinkArcs();
+
+    for (int i = 1; i <= numNodes; i++) {
+	Node& node = nodes[i];
+	if ((node.getExcess() > 0) && 
+	    (node.getLabel() == Node::INITIAL_LABEL))
+	{	
+	    pushFlowOut(node);
+	}
+    }
+
+    setInitialNodeStatus();
+}
+@ %def buildGreedyPushTree
+The real work in this greedy scheme is pushing the flow out of a
+node.  This recursive function finds the `best' edge to push the
+flow out on, and then we push the flow.  When we push flow out,
+we make this node a child of the node at the other end of the arc,
+and then we try to push flow out of that node (hence the recursion).
+As we visit each node, we relabel it to prevent visiting the same node
+more than once.
+
+The function returns true if we eventually push the excess to
+a sink-adjacent node with negative execess that exceeds the 
+amount we are pushing.  In this case, we have created a weak
+branch.  If we reach a point where the flow cannot be pushed
+out of a node, that node then becomes the root of a strong branch,
+and the function returns false.
+<<Solver methods>>=
+    Boolean pushFlowOut(Node& node);
+<<Solver method implementations>>=
+Boolean PhaseSolver::pushFlowOut(Node& node)
+{
+    Boolean foundSink = FALSE;
+    node.setLabel(INIT_STRONG_LABEL);
+    labelCount[INIT_STRONG_LABEL]++;
+
+    NodeExcess excess = node.getExcess();
+    Edge* bestOutEdge = nil;
+    <<find best out edge>>
+
+    FlowAmount flow = excess;
+    if (bestOutEdge != nil) {
+	Node& otherNode = *bestOutEdge->getOtherNode(&node);
+	TRACE( trout << "push positive excess (" << flow << " from " 
+		     << node.getId() << " to " << otherNode.getId() << endl);
+	         
+	bestOutEdge->increaseFlow(flow);
+	node.decrementExcess(flow);
+	otherNode.incrementExcess(flow);
+	otherNode.addChild(node, *bestOutEdge);
+
+	<<recursively push flow out>>
+    } else {
+	TRACE( trout << "can't push excess from " << node.getId() << endl; )
+	addStrongBranch(node);
+    }
+
+    return foundSink;
+}
+@ %def pushFlowOut
+To find the best out edge, we iterate over all of the edges looking
+for one that has at least enough capacity to handle the excess.  Also,
+the edge must refer to a node that we haven't visited yet, as indicated
+by its label.  If we find multiple edges with sufficient capacity, we
+take the one with the least capacity.  Alternatively, we could take
+the first fit, but we do not expect that scanning every edge will be
+too burdensome.
+<<find best out edge>>=
+    node.resetIterations();
+    while (node.hasMoreNeighbors()) {
+	Edge& edge = node.getCurrentNeighbor();
+	if (edge.getOtherNode(&node)->getLabel() == Node::INITIAL_LABEL) {
+	    if (edge.residCapacity(node) >= excess) {
+		if (bestOutEdge == nil) {
+		    bestOutEdge = &edge;
+		} else if (bestOutEdge->residCapacity(node) > edge.residCapacity(node)) {
+		    bestOutEdge = &edge;
+		}
+	    }
+	    // else, could also track max capacity edge to split here
+	}
+	node.advanceNeighbors();
+    }
+    node.resetIterations();
 @
+One would think that continuing to push flow out would be pretty simple:
+just call [[pushFlowOut(otherNode)]].  However, it's not that easy.
+If we get lucky, we have pushed flow all the way to a sink-adjacent
+node.  If that node had a negative excess that exceeds the excess
+we are pushing out of [[node]], then we have have created a weak
+branch, but we have already labeled all of the nodes as strong.  As
+a slightly cheezy hack, we will undo the labeling.  Another solution
+would be a more sophisticated version of [[setInitialNodeStatus]] that
+finds roots of branches and labels all children strong or weak depending
+on the root.
+<<recursively push flow out>>=
+    if (otherNode.getExcess() > 0) {	// ZERO_DEFICIT
+	foundSink = pushFlowOut(otherNode);
+    } else {
+	TRACE( trout << "found sink-adjacent node " << otherNode.getId() << endl;)
+	foundSink = TRUE;
+	CHECK_TREE(otherNode, nil);
+    }
+
+    if (foundSink) {
+	TRACE( trout << "relabeling "  << node.getId() << " as weak " << endl;)
+	labelCount[INIT_STRONG_LABEL]--;
+	node.setLabel(INIT_WEAK_LABEL);
+	labelCount[INIT_WEAK_LABEL]++;
+    }
+@
+\subsubsection{Splitting Path Initialization}
+\subsubsection{Staturate All Arcs}
 \subsection{Input Output Functions}
 We need routines to read Dimacs problem files and write 
 Dimacs flow files.  At the moment, these are member
@@ -947,6 +961,14 @@ void PhaseSolver::dumpNodes(ostream& out)
 }
 @ %def dumpNodes
 \subsection{File Boiler Plate}
+<<C++ overhead>>=
+    PhaseSolver();
+<<Solver method implementations>>=
+PhaseSolver::PhaseSolver()
+{
+    <<default Solver constructor>>
+}
+@
 We start with the boiler-plate implementation file. 
 <<*>>=
 #include "PhaseSolver.h"

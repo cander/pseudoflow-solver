@@ -72,6 +72,10 @@ check:
 	rm -f $(OBJECTS)
 	$(MAKE) OPTIONS="-g -DDEBUG -DTRACING"
 
+trace:
+	rm -f $(OBJECTS)
+	$(MAKE) OPTIONS="-g -DTRACING"
+
 optimize:
 	rm -f $(OBJECTS)
 	$(MAKE) OPTIONS="-O2" all

@@ -1,5 +1,4 @@
-\section{Data Declarations}
-\subsection{Nodes in the Graph}
+\section{Nodes in the Graph}
 Nodes belong to both the original, complete graph as well as
 the tree maintained by the solver.  Therefore, they have 
 neighbors (in the original graph), and a parent and children (in
@@ -389,7 +388,7 @@ void Node::init(NodeId id, int numNeighbors)
 public:
     static const int INITIAL_LABEL = 0;
 @ init
-\subsubsection{Debugging}
+\subsection{Debugging}
 To aid in debugging the tree and graph manipulation functions,
 we have some functions that we can use to print and check the
 data structures.
@@ -557,7 +556,7 @@ private:
     Node(const Node&);
     Node& operator=(const Node&);
 @
-\subsubsection{File Boiler Plate}
+\subsection{File Boiler Plate}
 We start with the boiler-plate implementation file. 
 <<*>>=
 #include "Node.h"

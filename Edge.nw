@@ -1,5 +1,5 @@
-\subsection{Edges}
-\subsubsection{Structural Data}
+\section{Edges}
+\subsection{Structural Data}
 An edge represents a relationship between two nodes, the source and
 the destination.
 <<Edge data>>=
@@ -52,7 +52,7 @@ want to be able to get the other node.
 INLINE NodePtr Edge::getOtherNode(const NodePtr node) const
 { return (node == source) ? dest : source; }
 @ %def getOtherNode
-\subsubsection{Flow Data}
+\subsection{Flow Data}
 <<Edge data>>=
     FlowAmount	capacity;
     FlowAmount	flow;
@@ -191,7 +191,7 @@ Boolean Edge::validateEdge(Node& node1, Node& node2)
     return result;
 }
 @ %def validateEdge
-\subsubsection{File Boiler Plate}
+\subsection{File Boiler Plate}
 We start with the boiler-plate implementation file. 
 <<*>>=
 #include "Edge.h"
