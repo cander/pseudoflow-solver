@@ -39,7 +39,7 @@ after each merger: push the flow all the way from the strong root
 to the weak root.  Later we will introduce another solver that
 only performs a partial normalization after each merger.
 <<Solver methods>>=
-    void solve(AddBranchPtr addFunc);
+    virtual void solve(AddBranchPtr addFunc);
 <<Solver method implementations>>=
 void PhaseSolver::solve(AddBranchPtr addFunc)
 {
@@ -390,11 +390,11 @@ void PhaseSolver::merge(Node& strong, Node& weak, Edge& edge)
     (this->*renormalizeFunc)(strongRoot, weak);
 }
 @ %def merge
-<<Solver data>>=
+<<Solver protected memebers>>=
     RenormalizePtr renormalizeFunc;
 <<default Solver constructor>>=
     renormalizeFunc = &PhaseSolver::fullRenormalize;
-@
+@ %def renormalizeFunc
 Push excess from the former strong root, [[src]] to the strong node 
 and one step beyond to the weak node, [[dest]].
 When this finishes, the remaining excess will be stored on
@@ -643,7 +643,7 @@ void NodeBucket::removeNode(Node& node)
     }
     assert("couldn't find node in bucket" == nil);
 }
-<<Solver data>>=
+<<Solver protected memebers>>=
     NodeBucket*	buckets;
 <<default Solver constructor>>=
     buckets = nil;
@@ -678,7 +678,7 @@ by some sort of heap.
 Also, there are a couple of minor instances where we want to scan all 
 of the buckets.  In those cases, having the maximum label that we
 have seen is useful to avoid scanning every bucket.
-<<Solver data>>=
+<<Solver protected memebers>>=
     NodeLabel 	lowestLabel;
     NodeLabel 	highestLabel;
 <<default Solver constructor>>=
@@ -1800,7 +1800,7 @@ void PhaseSolver::setConstantLabels()
    //          labelCount[INIT_STRONG_LABEL] == numNodes);
 }
 @ %def setConstantLabels
-<<Solver data>>=
+<<Solver protected memebers>>=
     static const int INIT_STRONG_LABEL=2;
     static const int INIT_WEAK_LABEL=1;
     static const int INIT_ZERO_LABEL=1;
@@ -3125,6 +3125,88 @@ void PhaseSolver::reduceFlow(Node& from, Edge& edge, FlowAmount amt)
 }
 @ %def reduceFlow
 
+\subsection{Highest Root Label}
+<<Highest root label declaration>>=
+class HighestRootSolver : public PhaseSolver
+{
+    public: <<Highest Label public declarations>>
+    protected: <<Highest Label protected declarations>>
+};
+@ %def HighestRootSolver
+The first, obvious thing we need for the highest labeled root solver, is a
+function to fetch the highest labeled branch.  Confusingly, we will
+override the virtual function [[getLowestBranch]] to do this.
+<<Highest Label protected declarations>>=
+    virtual NodePtr getLowestBranch();
+<<Highest Label implementations>>=
+NodePtr HighestRootSolver::getLowestBranch()
+{
+    NodePtr result = nil;
+    <<find highest non-empty bucket>>
+    assert((result != nil) ? (result->getLabel() == highestLabel) : 1);
+    return result;
+}
+@ Finding the highest labeled non-empty bucket, is basically the reverse
+of [[getLowestBucket]]: search from [[highestLabel]] down to
+[[lowestLabel]].
+<<find highest non-empty bucket>>=
+    while(highestLabel > lowestLabel) {
+	result = buckets[highestLabel].removeHead();
+	if (result != nil) {
+	    result->setNextNil();
+	    break;
+	} else {
+	    highestLabel--;
+	}
+    }
+
+    lastRoot = result;
+@
+<<Highest Label public declarations>>=
+    virtual void solve(AddBranchPtr addFunc);
+<<Highest Label implementations>>=
+void HighestRootSolver::solve(AddBranchPtr addFunc)
+{
+    IFTRACE(int currentPhase = 0;)
+    addBranchFunc = addFunc;
+    renormalizeFunc = &PhaseSolver::fullRenormalize;
+    initGlobalRelabel();
+
+    NodePtr strongBranch = getLowestBranch();
+    while (strongBranch != nil) {
+	NodeLabel strongLabel =  strongBranch->getLabel();
+	IFTRACE(
+	    if ( strongLabel != currentPhase) {
+		currentPhase = strongLabel;
+		TRACE(trout << "Phase " << currentPhase << endl;);
+	    }
+	)
+	<<prune gap branch if needed>>
+	Boolean performedMerger = processBranch(*strongBranch);
+	STATS(performedMerger ? 0 : numEmptyBranchScans++ );
+	checkForRelabel();
+	strongBranch = getLowestBranch();
+    }
+    IFDEBUG(checkMergers());
+}
+@ If there is a gap, we can prune this branch and all others with the same
+label.  For the moment, we will cheat and let [[globalRelabel]] do it for
+us.
+<<prune gap branch if needed>>=
+    if ((labelCount[strongLabel - 1] == 0) && 
+        (strongLabel > INIT_WEAK_LABEL))
+    {
+cout << "Found a gap at label " << strongLabel << endl;
+	//addBranchFifo(*strongBranch);
+	//globalRelabel();
+	setBranchLabel(*strongBranch, numNodes);
+	strongBranch = getLowestBranch();
+	if (strongBranch == nil) {
+	    break;
+	}
+	strongLabel =  strongBranch->getLabel();
+    }
+@
 \subsection{Parametric Sensitivity Analysis}
 We support simple parametric sensitivity analysis based on the form
 used by GGT.  Given a sequence of increasing values of a parameter, 
@@ -3589,7 +3671,7 @@ void PhaseSolver::writeStats(ostream& dout)
     dout << "c  numRemovedNodes: " << numRemovedNodes << endl;
     dout << "c  lowestLabel:   " << lowestLabel     << endl;
     dout << "c"                                     << endl;
-<<Solver data>>=
+<<Solver protected memebers>>=
     int numMergers;
     int numPushToParent;
     int numSplits;
@@ -3761,6 +3843,9 @@ not show up in the function call traces of the profiler.
 Now, we'll add the simplex solver methods.
 <<*>>=
     <<Simplex implementations>>
+@ And the Highest Label solver.
+<<*>>=
+    <<Highest Label implementations>>
 @
 The header defines the [[PhaseSolver]] class, its member functions, member
 data, and inline functions.  Again, we have more boiler-plate.
@@ -3819,4 +3904,7 @@ class NodeBucket
 We can also add the simplex solver class.
 <<header>>=
     <<Simplex declaration>>
+@ And the highest label solver.
+<<header>>=
+    <<Highest root label declaration>>
 
