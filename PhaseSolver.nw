@@ -372,7 +372,6 @@ void PhaseSolver::merge(Node& strong, Node& weak, Edge& edge)
 
     Node& strongRoot = *strong.rehang();
     weak.addChild(strong, edge);
-weak.checkTree(weak.getParentEdge());
     CHECK_TREE(*weak.getRoot(), nil);
 
     // renormalize the tree
