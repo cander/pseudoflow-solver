@@ -65,16 +65,19 @@ void Node::removeNeighbor(Edge& edge)
 In order to scan from a node back up to the root, each node needs
 to have a pointer to its parent.  During push operations, we also
 need to know the residual capacity of the edge between the parent
-and child, so we do not simply store a pointer to the parent,
-rather we keep a pointer to the edge between the parent and
-child, which seems a little indirect.
+and child, so we need to keep a pointer to the edge between the 
+parent and the child.  We can get the parent node from this edge,
+but profiling revealed this as a hot spot.  Therefore, we also
+store a pointer to the parent node in addition to storing the edge.
 <<Node data>>=
     EdgePtr	parentEdge;
+    NodePtr	parentNode;
 <<default Node constructor>>=
     parentEdge = nil;
+    parentNode = nil;
 <<header include files>>=
 #include "Edge.h"
-@ %def parentEdge
+@ %def parentEdge parentNode
 We can define some accessor methods to use the parent edge.
 The parent edge is [[nil]] if the node is a root.
 <<Node methods>>=
@@ -86,7 +89,7 @@ The parent edge is [[nil]] if the node is a root.
 INLINE EdgePtr Node::getParentEdge() const
 { return parentEdge; }
 INLINE NodePtr Node::getParentNode() 
-{ return (parentEdge != nil) ? parentEdge->getOtherNode(this) : nil; }
+{ return parentNode; }
 INLINE Boolean Node::isRootNode() const
 { return (parentEdge == nil) ? TRUE : FALSE; }
 INLINE FlowAmount Node::getParentCapacity() const
@@ -117,6 +120,7 @@ void Node::addChild(Node& child, Edge& edge)
     children.addHoleElement(&edge);
     edge.setDirectionTo(this);
     child.parentEdge = &edge;
+    child.parentNode = this;
 }
 @ %def addChild
 We need methods to iterate over the neighbors and children.  These
@@ -179,6 +183,7 @@ void Node::split()
     getParentNode()->children.removeElement(parentEdge);
     parentEdge->toggleOrientation();
     parentEdge = nil;
+    parentNode = nil;
 }
 @ %def split
 Rehanging a tree from a node involves reversing the
@@ -224,25 +229,27 @@ NodePtr Node::rehang()
     if (parentEdge != nil) {
 	NodePtr currNode = this;
 	EdgePtr edge = parentEdge;
-	NodePtr parentNode = getParentNode();
+	NodePtr parNode = getParentNode();
 	parentEdge = nil;
+	parentNode = nil;
 
-	while (parentNode != nil) {
-	    assert(currNode->label == parentNode->label);
-	    assert(parentNode != currNode);
-	    EdgePtr nextEdge = parentNode->getParentEdge();
+	while (parNode != nil) {
+	    assert(currNode->label == parNode->label);
+	    assert(parNode != currNode);
+	    EdgePtr nextEdge = parNode->getParentEdge();
 
-	    parentNode->children.removeCurrentElement(edge);
-	    parentNode->parentEdge = edge;
+	    parNode->children.removeCurrentElement(edge);
+	    parNode->parentEdge = edge;
+	    parNode->parentNode = currNode;
 	    currNode->children.addCurrentElement(edge);
 	    edge->toggleOrientation();
 
 	    if (nextEdge != nil) {
-		currNode = parentNode;
+		currNode = parNode;
 		edge = nextEdge;
-		parentNode = edge->getOtherNode(currNode);
+		parNode = edge->getOtherNode(currNode);
 	    } else {
-		oldRoot = parentNode;
+		oldRoot = parNode;
 		break;
 	    }
 	}
@@ -315,13 +322,12 @@ calling function can choose to split us if he sees no remaining
 residual capacity.
 <<Node methods>>=
     Boolean pushToParent();
-<<Node method implementations>>=
-Boolean Node::pushToParent()
+<<Node inline implementations>>=
+INLINE Boolean Node::pushToParent()
 {
     assert(parentEdge != nil);
     Edge& edge = *parentEdge;
-    Node& parent = *(edge.getOtherNode(this));	// use getHead instead?
-    assert(parent.excess <= 0);
+    assert(parentNode->excess <= 0);
     assert(edge.residCapacity() >= 0);
 
     if (edge.residCapacity() >= excess) {
@@ -338,7 +344,7 @@ gets all of our excess, our excess
 becomes zero, and the flow amount on the edge increases.
 <<push without splitting>>=
     FlowAmount flow = excess;
-    parent.excess += flow;
+    parentNode->excess += flow;
     excess = 0;
     edge.increaseFlow(flow);
 @
@@ -347,7 +353,7 @@ as much flow as there is residual capacity on the arc, and we split
 the current node when done.
 <<push and split>>=
     FlowAmount flow = edge.residCapacity();
-    parent.excess += flow;
+    parentNode->excess += flow;
     excess -= flow;
     edge.increaseFlow(flow);
     split();
@@ -438,7 +444,7 @@ swamp the output that we look at.
 Boolean Node::checkTree(EdgePtr expectedParentEdge)
 {
     Boolean treeOK = TRUE;
-    cout << id << " ";
+    //  cout << id << " ";
     <<check parent pointers>>
 
     if (treeOK) {
