@@ -12,14 +12,20 @@
 
 // set to TRUE to cause (time consuming) tree checks to take place
 Boolean checkTree = FALSE;
+// set to TRUE to print verbose tracing messages
+Boolean tracingEnabled = FALSE;
 
 void 
 usage()
 {
-    cerr << "Usage: pllps [-d] [-f] [-I init] [-N norm] [-B branch] input-graph flow-output" << endl;
+    cerr << "Usage: pllps [-x] [-t] [-d] [-f] -V lam1,lam2,... [-I init] [-N norm] [-B branch] input-graph flow-output" << endl;
     cerr << "\t -d   dump the final disposition of each node" << endl;
     cerr << "\t -f   write the flow values for each arc" << endl;
     cerr << "\t -t   perform checkTree operations frequently" << endl;
+    cerr << "\t -x   trace execution on console" << endl;
+
+    cerr << "\t -V   specify values for lambda" << endl;
+    cerr << "\t -L   inital labeling method: const, sink, deficit" << endl;
     cerr << "\t -I   initialization function: simple, path, saturate, greedy " << endl;
     cerr << "\t -s   specify the number of splits for path init" << endl;
     cerr << "\t -B   strong bucket management: fifo, lifo, wave" << endl;
@@ -28,7 +34,7 @@ usage()
     cerr << "\t -O   search order: pre, post" << endl;
 }
 
-float*
+double*
 getLambdas(int& numLambdas, char* str)
 {
     // figure out how many elements - find each comma and replace
@@ -42,7 +48,7 @@ getLambdas(int& numLambdas, char* str)
 	curr = index(curr, ',');
     }
     numLambdas = numCommas + 1;
-    float* result = new float[numLambdas];
+    double* result = new double[numLambdas];
 
     // parse each element with atof
     curr = str;
@@ -59,18 +65,19 @@ main(int argc, char** argv)
 {
     Boolean dumpNodes = FALSE;
     Boolean writeFlow = FALSE;
-    void (PhaseSolver::* initFunc)() = &PhaseSolver::buildSimpleTree;
+    void (PhaseSolver::* initFunc)(LabelMethod) = &PhaseSolver::buildSimpleTree;
     void (PhaseSolver::* solverFunc)(AddBranchPtr) = &PhaseSolver::solve;
     AddBranchPtr addBranchFunc = &PhaseSolver::addBranchLifo;
     PhaseSolver* solver = new PhaseSolver();
     int numSplits = -1;
     Boolean postOrder = FALSE;
-    float* lambdaValues = nil;
+    double* lambdaValues = nil;
     int numLambdas = 0;
+    LabelMethod labelMethod = LABELS_CONSTANT;
 
     // parse arguments
     int ch;
-    while ((ch = getopt(argc, argv, "dftL:I:s:M:N:B:O:")) != EOF) {
+    while ((ch = getopt(argc, argv, "dftxV:L:I:s:M:N:B:O:")) != EOF) {
 	switch (ch) {
 	case 'd':
 	    dumpNodes = TRUE;
@@ -81,7 +88,10 @@ main(int argc, char** argv)
 	case 't':
 	    checkTree = TRUE;
 	    break;
-	case 'L':
+	case 'x':
+	    tracingEnabled = TRUE;
+	    break;
+	case 'V':
 	    lambdaValues = getLambdas(numLambdas, optarg);
 	    break;
 	case 'I':
@@ -155,6 +165,20 @@ main(int argc, char** argv)
 	    }
 	    break;
 
+	case 'L':
+	    if (strcmp(optarg, "const") == 0) {
+		labelMethod = LABELS_CONSTANT;
+	    } else if (strcmp(optarg, "sink") == 0) {
+		labelMethod = LABELS_SINK_DIST;
+	    } else if (strcmp(optarg, "deficit") == 0) {
+		labelMethod = LABELS_DEFICIT_DIST;
+	    } else {
+		cerr << "Invalid pre/post order option " << optarg << endl;
+		usage();
+		return 1;
+	    }
+	    break;
+
 	default:
 	    usage();
 	    return 1;
@@ -216,7 +240,7 @@ main(int argc, char** argv)
     // build initial tree
     Timer treeTimer;
     treeTimer.start();
-    (solver->*initFunc)();
+    (solver->*initFunc)(labelMethod);
     treeTimer.stop();
 
     // solve
