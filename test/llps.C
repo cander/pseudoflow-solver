@@ -123,6 +123,7 @@ main(int argc, char** argv)
     
     if (argc != 2) {
 	usage();
+	assert(0);
 	return 1;
     }
 
@@ -159,55 +160,59 @@ main(int argc, char** argv)
     Boolean readOK =  solver->readDimacsInstance(instanceName);
     initTimer.stop();
 
-    if (readOK) {
-	cout << "read problem instance OK" << endl;
-	Timer totalTimer;
-	totalTimer.start();
-
-	// build initial tree
-	Timer treeTimer;
-	treeTimer.start();
-	(solver->*initFunc)();
-	treeTimer.stop();
-
-	// solve
-	Timer solveTimer;
-	solveTimer.start();
-	(solver->*solverFunc)(addBranchFunc);
-	solveTimer.stop();
-
-	if (dumpNodes) {
-	    solver->dumpNodes(dout);
-	}
-
-	// convert to flow
-	Timer convertTimer;
-	convertTimer.start();
-	solver->convertToFlow();
-	convertTimer.stop();
-
-	totalTimer.stop();
-
-	cout << "time to establish tree: " << treeTimer << endl;
-	cout << "done solving: " << solveTimer << endl;
-	cout << "time to convert flow: " << convertTimer << endl;
-	cout << "total time: " << totalTimer << endl;
-
-	time_t endTime = time(0);
-	dout << "c  beginRun: " << ctime(&beginTime);
-	dout << "c  endRun: " << ctime(&endTime);
-
-	dout << "c  timeToInitialize: " << initTimer << endl;
-	dout << "c  timeToSolve: " << solveTimer << endl;
-	dout << "c  timeToFlow: " << convertTimer << endl;
-	dout << "c  totalTime: " << totalTimer << endl;
-
-	solver->writeStats(dout);
-
-	if (writeFlow) {
-	    solver->writeDimacsFlow(dout);
-	}
+    if (readOK == FALSE) {
+	dout << "c  CANNOT READ INSTANCE" << endl;
+	return 1;
     }
+
+    cout << "read problem instance OK" << endl;
+    Timer totalTimer;
+    totalTimer.start();
+
+    // build initial tree
+    Timer treeTimer;
+    treeTimer.start();
+    (solver->*initFunc)();
+    treeTimer.stop();
+
+    // solve
+    Timer solveTimer;
+    solveTimer.start();
+    (solver->*solverFunc)(addBranchFunc);
+    solveTimer.stop();
+
+    if (dumpNodes) {
+	solver->dumpNodes(dout);
+    }
+
+    // convert to flow
+    Timer convertTimer;
+    convertTimer.start();
+    solver->convertToFlow();
+    convertTimer.stop();
+
+    totalTimer.stop();
+
+    cout << "time to establish tree: " << treeTimer << endl;
+    cout << "done solving: " << solveTimer << endl;
+    cout << "time to convert flow: " << convertTimer << endl;
+    cout << "total time: " << totalTimer << endl;
+
+    time_t endTime = time(0);
+    dout << "c  beginRun: " << ctime(&beginTime);
+    dout << "c  endRun: " << ctime(&endTime);
+
+    dout << "c  timeToInitialize: " << initTimer << endl;
+    dout << "c  timeToSolve: " << solveTimer << endl;
+    dout << "c  timeToFlow: " << convertTimer << endl;
+    dout << "c  totalTime: " << totalTimer << endl;
+
+    solver->writeStats(dout);
+
+    if (writeFlow) {
+	solver->writeDimacsFlow(dout);
+    }
+
     dout.close();
 
     return 0;
