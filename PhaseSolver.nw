@@ -1967,7 +1967,9 @@ void PhaseSolver::convertToFlow()
 {
     currentMark = 1024;
     <<replace source and sink arcs>>
-    <<prune zero flow arcs>>
+    returnSinkAdjDeficit();
+    returnSourceAdjExcess();
+
     for (int i = 1; i <= numNodes; i++) {
 	Node& node = nodes[i];
 	if (&node == sourceNode || &node == sinkNode) {
@@ -1986,44 +1988,124 @@ When we initialized the psuedoflow (in [[saturateSourceSinkArcs]]),
 we removed the arcs from/to the
 source/sink to prevent flow from going back to the source/sink.
 Now, we actaully want to be able to get to the source and sink,
-so we add them back.
+so we add them back.  We begin by replacing arcs that go from the
+sink to a source-adjacent node in the source-adjacent node.
 <<replace source and sink arcs>>=
-    for (int i = 0 ; i < numEdges; i++) {
-	Edge& edge = edges[i];
+    for(sourceNode->resetIterations();
+        sourceNode->hasMoreNeighbors();
+	sourceNode->advanceNeighbors())
+    {
+	Edge& edge = sourceNode->getCurrentNeighbor();
 	Node& edgeSource = *edge.getSource();
 	Node& edgeDest = *edge.getDest();
-
-	if ((edge.getSource() == sourceNode) &&
-	    (edge.getDest() == sinkNode))
-	{
-	    continue;
-	}
-
-	if (&edgeSource == sourceNode) {
+	if ((&edgeSource == sourceNode) && (&edgeDest != sinkNode)) {
 	    edgeDest.addNeighbor(edge);
 	} 
-	if (&edgeDest == sinkNode) {
+    }
+@ Replace arcs that go from a sink-adjacent node in to the sink in the
+sink-adjacent node.
+<<replace source and sink arcs>>=
+    for(sinkNode->resetIterations();
+        sinkNode->hasMoreNeighbors();
+	sinkNode->advanceNeighbors())
+    {
+	Edge& edge = sinkNode->getCurrentNeighbor();
+	Node& edgeSource = *edge.getSource();
+	Node& edgeDest = *edge.getDest();
+	if ((&edgeSource != sourceNode) && (&edgeDest == sinkNode)) {
 	    edgeSource.addNeighbor(edge);
-	}
+	} 
     }
 @
-We also want to remove arcs with zero flow on them because we know
-we don't need them to push flow back.  We iterate over the nodes
-instead of the arcs so that we can use [[removeCurrentNeighbor]]
-via [[pruneZeroFlowArcs]] which is much more efficient than
-removing an arbitrary neighbor arc.  (In an earlier version of the
-code we iterated over the arcs and called [[removeNeighbor]], which
-resulted in an $O(m^2)$ algorithm that performed very badly for
-dense graphs.)
-<<prune zero flow arcs>>=
-    for (int i = 1; i <= numNodes; i++) {
-	Node& node = nodes[i];
-	if (&node == sourceNode || &node == sinkNode) {
-	    continue;
+For initializations schemes other than saturate-all, we know that
+all of the weak roots will be adjacent to the sink.  This makes
+returning their deficit trivial - just one arc, and it should always
+have sufficient capacity.
+<<Solver public declarations>>=
+    void returnSinkAdjDeficit();
+<<Solver method implementations>>=
+void PhaseSolver::returnSinkAdjDeficit()
+{
+    for(sinkNode->resetIterations();
+        sinkNode->hasMoreNeighbors();
+	sinkNode->advanceNeighbors())
+    {
+	Edge& edge = sinkNode->getCurrentNeighbor();
+	Node& sinkAdjNode = *edge.getSource();
+	if (&sinkAdjNode != sinkNode) {
+	    FlowAmount excess = sinkAdjNode.getExcess();
+	    if (excess < 0) {
+		edge.reduceFlow(-excess);
+		sinkAdjNode.incrementExcess(-excess);
+	    }
 	}
-	node.pruneZeroFlowArcs();
     }
-@ 
+}
+@ %def returnSinkAdjDeficit
+For strong nodes, we are not so lucky.  However, we can still pick
+up some `low hanging fruit'.  Chances are there is no excess at a
+source-adjacent node because it has merged with weak nodes.  However,
+we can trace the path up to the root of a source-adjacent node.
+We can return the excess at the root to the source via the path we
+navigated to find the root.  This will remove excess from some
+strong nodes in the graph but not all of them because our root may
+have merged and split.  This will be more efficient that discovering
+the path from the root node.
+<<Solver public declarations>>=
+    void returnSourceAdjExcess();
+<<Solver method implementations>>=
+void PhaseSolver::returnSourceAdjExcess()
+{
+    for(sourceNode->resetIterations();
+        sourceNode->hasMoreNeighbors();
+	sourceNode->advanceNeighbors())
+    {
+	Edge& edge = sourceNode->getCurrentNeighbor();
+	Node& srcAdjNode = *edge.getDest();
+	FlowAmount bottleCap = edge.getFlow();
+	<<find bottleneck capacity to strong root>>
+	if (bottleCap > 0) {
+	    <<reduce flow along path to strong root>>
+	}
+    }
+}
+@ %def returnSourceAdjExcess
+First we need to find the bottleneck capacity of all arcs along
+the path to the root of the branch.  We do this iteratively rather
+than recursively.  Theoretically, this should yeild better performance.
+<<find bottleneck capacity to strong root>>=
+    Node* currNode = &srcAdjNode;
+    while (currNode->isRootNode() == FALSE) {
+	FlowAmount parentCap = currNode->getParentDownCapacity();
+	if (parentCap < bottleCap) {
+	    bottleCap = parentCap;
+	}
+	currNode = currNode->getParentNode();
+    }
+@ Then we need to take the minimum of that and excess of the root.  If the 
+root has a deficit, we indicate that by setting the bottleneck capacity
+to zero.
+<<find bottleneck capacity to strong root>>=
+    FlowAmount branchExcess = currNode->getExcess();
+    if (branchExcess > 0) {
+	if (branchExcess < bottleCap) {
+	    bottleCap = branchExcess;
+	}
+    } else {
+	bottleCap = 0;
+    }
+@ Once we know the bottleneck capacity, reducing the flow is pretty 
+trivial starting from the arc out of the source.  Again we do
+this iteratively.
+<<reduce flow along path to strong root>>=
+    edge.reduceFlow(bottleCap);
+    currNode = &srcAdjNode;
+    while (currNode->isRootNode() == FALSE) {
+	currNode->getParentEdge()->reduceFlow(bottleCap);
+	currNode = currNode->getParentNode();
+    }
+    currNode->decrementExcess(bottleCap);
+@
 If a node has excess/deficit, we begin search from the node among its
 neighbors trying to find a path back to the source/sink.
 Each time we find a path, we reduce the excess/deficit on this node.
@@ -2100,8 +2182,13 @@ PhaseSolver::visitNode(Node& node, Node& prevNode, FlowAmount& bottleCap,
 	Node& neighbor = *neighborEdge.getOtherNode(&node);
 	FlowAmount residCap = neighborEdge.reductionCapacity(
 				    seekingSource ? neighbor : node);
-	if ((&neighbor != &prevNode) && (residCap > 0)) {
-	    <<visit neighbor node>>
+	if (residCap > 0) {
+	    if (&neighbor != &prevNode) {
+		<<visit neighbor node>>
+	    }
+	} else {
+	    // useless arc - remove it
+	    node.removeNeighbor(neighborEdge);
 	}
 	node.advanceNeighbors();
     }
@@ -2158,13 +2245,8 @@ void PhaseSolver::reduceFlow(Node& from, Node& to, Edge& edge,
 {
     edge.reduceFlow(amt);
 
-    // XXX-should this use reduction capacity?
-    if (edge.residCapacity(from) == 0) {
-	TRACE(trout << "Removing " << edge << " from " << from.getId() << endl);
+    if (edge.reductionCapacity(from) == 0) {
 	from.removeNeighbor(edge);
-    } else if (edge.residCapacity(to) == 0) {
-	TRACE(trout << "Removing " << edge << " from " << to.getId() << endl);
-	to.removeNeighbor(edge);
     }
 }
 @ %def reduceFlow
