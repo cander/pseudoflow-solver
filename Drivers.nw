@@ -7,27 +7,34 @@ the duplication of code.
 #include "PhaseSolver.h"
 <<Timer declaration and implementation>>
 
+<<common declarations>>
+
+<<common declarations>>=
 #include <iostream.h>
 #include <fstream.h>
 #include <time.h>
 #include <stdlib.h>
+#include <string.h>
 #ifdef NEED_GETOPT
 #include <getopt.h>
 #endif /*NEED_GETOPT*/
 
 extern char* buildFlags;
+extern char* buildDate;
 
 // set to TRUE to cause (time consuming) tree checks to take place
 Boolean checkTree = FALSE;
 // set to TRUE to print verbose tracing messages
 Boolean tracingEnabled = FALSE;
 
+<<llps>>=
 void 
 usage()
 {
     cerr << "Usage: llps [-d] [-f] [-t] [-x] [-g freq][-I init] [-N norm] [-B branch] input-graph flow-output" << endl;
     <<common option usage>>
     cerr << "buildFlags: " << buildFlags << endl;
+    cerr << "buildDate: " << buildDate << endl;
 }
 
 int 
@@ -72,7 +79,6 @@ main(int argc, char** argv)
 	return 1;
     }
 
-    extern char* buildDate;
     dout << "c" << endl;
     dout << "c  instance: " << instanceName << endl;
     dout << "c  buildFlags: " << buildFlags << endl;
@@ -173,6 +179,7 @@ main(int argc, char** argv)
     cerr << "\t -N   normalization method: immed, delayed" << endl;
     cerr << "\t -O   search order: pre, post" << endl;
     cerr << "\t -L   inital node labels: const sink deficit" << endl;
+
 <<common option parsing>>=
 	case 'd':
 	    dumpNodes = TRUE;
@@ -283,20 +290,7 @@ main(int argc, char** argv)
 <<pllps>>=
 #include "PhaseSolver.h"
 <<Timer declaration and implementation>>
-
-#include <iostream.h>
-#include <fstream.h>
-#include <time.h>
-#include <stdlib.h>
-#include <string.h>
-#ifdef NEED_GETOPT
-#include <getopt.h>
-#endif /*NEED_GETOPT*/
-
-// set to TRUE to cause (time consuming) tree checks to take place
-Boolean checkTree = FALSE;
-// set to TRUE to print verbose tracing messages
-Boolean tracingEnabled = FALSE;
+<<common declarations>>
 
 void 
 usage()
@@ -380,8 +374,6 @@ main(int argc, char** argv)
 	return 1;
     }
 
-    extern char* buildFlags;
-    extern char* buildDate;
     dout << "c" << endl;
     dout << "c  instance: " << instanceName << endl;
     dout << "c  buildFlags: " << buildFlags << endl;
