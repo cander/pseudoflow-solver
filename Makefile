@@ -6,8 +6,7 @@ OPTIONS	= -g -DDEBUG -DTRACING
 INLINE_ALL  = -DINLINE_NODE -DINLINE_EDGELIST -DINLINE_EDGE -DINLINE_SOLVER
 INLINE  = $(INLINE_ALL)
 PROFILE_INLINE = $(INLINE_ALL)
-STANDARD_FLAGS = -DCOUNT_LABELS -DTERM_LABELS -DLIFO_BUCKETS  \
-		 -DSTATS_TRACING -DPARAM_SENSE
+STANDARD_FLAGS = -DSTATS_TRACING -DPARAM_SENSE
 #EXTRA_FLAGS =
 
 CFLAGS	= -Wall $(OPTIONS) $(INLINE) $(SITE_CFLAGS) $(STANDARD_FLAGS) $(EXTRA_FLAGS)
@@ -46,7 +45,7 @@ CPIF=>
 
 
 
-all: $(LIBNAME) 
+all: $(LIBNAME) llps pllps
 
 
 $(LIBNAME): $(LIBOBJS)
@@ -111,7 +110,7 @@ doc.dvi:	doc.tex allcode.tex
 
 # just run latex once quickly and throw up xdvi
 xdvi:	doc.tex allcode.tex
-	latex doc && xdvi doc
+	latex doc && $(XDVI) doc
 
 doc.ps: doc.dvi
 	dvips -o doc.ps doc.dvi
