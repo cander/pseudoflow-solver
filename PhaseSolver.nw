@@ -290,9 +290,9 @@ merger with a node labeled $l-2$.  This checks for that.
 	FlowAmount residCap = edge->residCapacity(node);
 	if (residCap > 0 && (neighbor.isStrong(FALSE)) == FALSE) {
 	    if (neighbor.getLabel() < node.getLabel()) {
-		cout << "Missed merger from " << node.getId() << " (l="
+		TRACE(trout << "Missed merger from " << node.getId() << " (l="
 		     << node.getLabel() << ") to " << neighbor.getId()
-		     << " (l=" << neighbor.getLabel() << ")" << endl;
+		     << " (l=" << neighbor.getLabel() << ")" << endl);
 	    }
 	}
     }
@@ -526,7 +526,7 @@ way to find a minimal source set.
 <<public Solver data>>=
     Boolean zeroDeficitIsStrong;
 <<default Solver constructor>>=
-    splitOnZeroCapacity = FALSE;
+    splitOnZeroCapacity = TRUE;
     zeroDeficitIsStrong = FALSE;
 @ %def splitOnZeroCapacity zeroDeficitIsStrong
 After we have attached the strong branch to the weak node, we need
@@ -1032,11 +1032,10 @@ label.  For the moment, we will cheat and let [[globalRelabel]] do it for
 us.
 <<prune gap branch if needed>>=
     if ((labelCount[strongLabel - 1] == 0) && 
-        (strongLabel > INIT_WEAK_LABEL))
+        //(strongLabel > INIT_WEAK_LABEL))
+        (strongLabel > maxWeakLabel))
     {
-cout << "Found a gap at label " << strongLabel << endl;
-	//addBranchFifo(*strongBranch);
-	//globalRelabel();
+	TRACE(trout << "Found a gap at label " << strongLabel << endl);
 	setBranchLabel(*strongBranch, numNodes);
 	strongBranch = getHighestBranch();
 	if (strongBranch == nil) {
@@ -1833,7 +1832,14 @@ void PhaseSolver::setLabelsAndStatus(LabelMethod labelMethod)
 	    setConstantLabels();
 	    break;
 	case LABELS_SINK_DIST:
+	    {
 	    setSinkDistLabels();
+	    setInitialLabelCounts();
+	    //for (int i = 0; i < numNodes; i++) {
+		//if (labelCount[i] > 0) labelCount[i]++;
+	    //}
+	    return;		// XXX - hack to test setInitialLableCount
+	    }
 	    break;
 	case LABELS_DEFICIT_DIST:
 	    setDeficitDistLabels();
@@ -1841,6 +1847,7 @@ void PhaseSolver::setLabelsAndStatus(LabelMethod labelMethod)
 	default:
 	    assert("invalid labeling method" == nil);
     }
+    setInitialLabelCounts();
 }
 @ %def setLabelsAndStatus
 This simplest scheme is to give weak nodes label one and strong nodes
@@ -1873,8 +1880,6 @@ void PhaseSolver::setConstantLabels()
 	}
 	node.resetIterations();
     }
-    // assert(labelCount[INIT_WEAK_LABEL] + 
-   //          labelCount[INIT_STRONG_LABEL] == numNodes);
 }
 @ %def setConstantLabels
 <<Solver private members>>=
@@ -1890,7 +1895,7 @@ It also updates the count of how many nodes have each label value.
 void PhaseSolver::labelBranch(Node& node, NodeLabel label)
 {
     node.setLabel(label);
-    labelCount[label]++;
+    //III labelCount[label]++;
 
     node.resetIterations();
     while (node.hasMoreChildren()) {
@@ -1906,6 +1911,57 @@ void PhaseSolver::labelBranch(Node& node, NodeLabel label)
 <<default Solver constructor>>=
     labelCount = nil;
 @ %def labelCount 
+Some of the labeling methods are fairly complex, and we have been kinda lax
+about keeping track of the label counts.  This is especially hard if we
+re-use code that was intended for use while solving when the labels are
+correct vs. initialization when the labels are not yet set.  Therefore,
+just to make sure everything is perfectly correct, we'll reset the label
+counts and then scan the nodes to count them correctly.
+and record their labels 
+<<Solver methods>>=
+    void setInitialLabelCounts();
+<<Solver method implementations>>=
+void PhaseSolver::setInitialLabelCounts()
+{
+    for (int i = 0; i <= numNodes; i++) {
+	labelCount[i] = 0;
+    }
+
+    maxWeakLabel = maxInitialLabel = INIT_WEAK_LABEL;
+    for (int i = 1; i <= numNodes; i++) {
+	Node& node = nodes[i];
+	if ((&node == sourceNode) || (&node == sinkNode)) {
+	    continue;
+	}
+
+	NodeLabel l = node.getLabel();
+
+	if (l < numNodes) {
+	    labelCount[l]++;
+	    if (l > maxInitialLabel) {
+		maxInitialLabel = l;
+	    }
+	    if ((node.getExcess() < 0) && (l > maxWeakLabel)) {
+		maxWeakLabel = l;
+	    }
+	} else {
+	    labelCount[numNodes]++;
+	}
+    }
+#ifdef DEBUG
+    int total = 0;
+    for (int i = 0; i <= numNodes; i++) {
+	total += labelCount[i];
+    }
+    assert(total == (numNodes - 2));
+#endif DEBUG
+}
+@ %def setInitialLabelCounts 
+<<Solver data>>=
+    int maxWeakLabel;
+<<default Solver constructor>>=
+    maxWeakLabel = INIT_WEAK_LABEL;
+@
 \subsubsection{Blocking Path Initialization}
 A simple extension to the idea of just simply saturating the
 source- and sink-adjacent arcs is to try to push flow from the
@@ -2232,6 +2288,7 @@ void PhaseSolver::buildSpTree(LabelMethod labelMethod)
 
     <<perform bfs labeling>>
     setSpInitialNodeStatus(labelMethod);	
+    maxWeakLabel = maxInitialLabel;		// needed for highest label
 
     IFDEBUG( checkBranches(); );
 }
@@ -2317,6 +2374,7 @@ void PhaseSolver::setSpInitialNodeStatus(LabelMethod labelMethod)
     switch(labelMethod) {
     case LABELS_CONSTANT:
 	setConstantLabels();
+	setInitialLabelCounts();
 	for (int i = 1; i <= numNodes; i++) {
 	    Node& node = nodes[i];
 	    node.distance = node.getLabel();
@@ -2333,6 +2391,9 @@ void PhaseSolver::setSpInitialNodeStatus(LabelMethod labelMethod)
 		// notice with cher graphs that some zero-deficit nodes are
 		// unreachable during initialization???
 		node.setLabel(INIT_WEAK_LABEL);
+		if (node.getLabel() > maxWeakLabel) {
+		    maxWeakLabel = node.getLabel();
+		}
 	    }
 	    labelCount[node.getLabel()]++;
 	    node.resetIterations();
@@ -2346,7 +2407,7 @@ void PhaseSolver::setSpInitialNodeStatus(LabelMethod labelMethod)
     int maxInitialLabel;
 <<default Solver constructor>>=
     maxInitialLabel = INIT_WEAK_LABEL;
-@ %def setSpInitialNodeStatus
+@ %def setSpInitialNodeStatus maxInitialLabel
 For a strong node, we iterate over its neighbors looking for nodes with
 non-positive excess and find the minimum label.  
 {\em We don't really care about in/out arcs, but source/sink node could
@@ -2438,7 +2499,6 @@ INLINE void PhaseSolver::initGlobalRelabel()
 {
     if (relabelFrequency > 0.0) {
 	relabelCounter = numRelabels + (int)(numNodes * relabelFrequency);
-	//relabelCounter = (int)(numNodes * relabelFrequency);
     } else {
 	relabelCounter = MAXINT;
     }
@@ -2666,12 +2726,22 @@ we need to increase the label by at least one.
 If we are using distance labels, it is possible to increase the node label
 by more, perhaps up to the distance label.  However, we cannot increase it
 higher than any of our children because that would violate monotonicity.
+
+One other issue to be aware of is that sometimes we are asked to increase
+the label of a node with infinite distance.  This can happen during global
+relabeling in two known cases.  First, if we don't split an arc with zero
+residual capacity, the top of a branch may have a path to the sink (and
+hence finite distance) while a sub-tree below a zero-capacity arc has no
+path.  Secondly, with saturate-all initialization, we can have nodes with
+no path to the sink, and hence infinite label.  Therefore, if we encounter
+a node with infinite distance, we just increment the label rather than
+increasing it up to its distance.
 <<Solver methods>>=
     void increaseNodeLabel(Node& node);
 <<Solver inline implementations>>= 
 INLINE void PhaseSolver::increaseNodeLabel(Node& node)
 {
-    if (node.distance > 0) {
+    if ((node.distance > 0) && (node.distance < numNodes)) {
 	NodeLabel oldLabel = node.getLabel();
 	NodeLabel newLabel = min(node.distance, node.minChildLabel);
 	newLabel = max(newLabel, oldLabel + 1);
@@ -3665,7 +3735,6 @@ void PhaseSolver::writeStats(ostream& dout)
     dout << "c  numEmptyBranchScans: " << numEmptyBranchScans << endl;
     dout << "c  numRemovedNodes: " << numRemovedNodes << endl;
     dout << "c  lowestLabel:   " << lowestLabel     << endl;
-    dout << "c"                                     << endl;
 <<Solver protected members>>=
     int numMergers;
     int numPushToParent;
@@ -3682,7 +3751,8 @@ void PhaseSolver::writeStats(ostream& dout)
 @
 To compute the flow amount, we just scan the neighbors of the source
 node and sum the flows on those arcs.  If we were paranoid, we'd also
-scan the sink arcs and compare the amounts.
+scan the sink arcs and compare the amounts.  We write it as a comment as
+well as an 's' line.
 <<write flow amount>>=
     int flowAmt = 0;
     for (sourceNode->resetIterations(); 
@@ -3692,6 +3762,8 @@ scan the sink arcs and compare the amounts.
 	Edge& edge = sourceNode->getCurrentNeighbor();
 	flowAmt += edge.getFlow();
     }
+    dout << "c  flowValue:   " << flowAmt     << endl;
+    dout << "c"                                     << endl;
     dout << "s " << flowAmt << endl;
 @
 We also use the methods of this class for data file conversion when
@@ -3792,10 +3864,10 @@ void PhaseSolver::checkMergers()
 		if ((neighbor.isStrong(FALSE) == FALSE) && 
 		    (edge->residCapacity(node) > 0))
 		{
-		    cout << "Found merger from " 
+		    TRACE(trout << "Found merger from " 
 		         << node.getId() << " (" << node.getLabel() << ")  to "
 		         << neighbor.getId() << " (" << neighbor.getLabel() << ")"
-			 << endl;
+			 << endl);
 		}
 	    }
 	}
