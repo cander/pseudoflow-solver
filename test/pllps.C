@@ -173,7 +173,7 @@ main(int argc, char** argv)
 	    } else if (strcmp(optarg, "deficit") == 0) {
 		labelMethod = LABELS_DEFICIT_DIST;
 	    } else {
-		cerr << "Invalid pre/post order option " << optarg << endl;
+		cerr << "Invalid inital labeling option " << optarg << endl;
 		usage();
 		return 1;
 	    }
