@@ -664,6 +664,27 @@ For tracing, printing the excess of the root is useful.
 NodeExcess Node::getRootExcess()
 { return getRoot()->excess; }
 @ %def getRootExcess
+
+<<debugging functions>>=
+    FlowAmount computeExcess();
+<<Node method implementations>>=
+FlowAmount Node::computeExcess()
+{ 
+    FlowAmount ex = 0;
+
+    ElIterator it(neighbors);
+    for (EdgePtr edge = it.getNext(); edge != nil; edge = it.getNext()) {
+	if (edge->getSource() == this) {
+	    ex -= edge->getFlow();
+	} else {
+	    ex += edge->getFlow();
+	}
+    }
+
+    return ex;
+}
+@ %def computeExcess
+
 We need a few function declarations for functions that the
 compiler will automatically generate for us.  We don't want to use
 these functions because doing so would signal an error in our code
