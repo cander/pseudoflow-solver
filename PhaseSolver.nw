@@ -43,7 +43,7 @@ only performs a partial normalization after each merger.
 <<Solver method implementations>>=
 void PhaseSolver::solve(AddBranchPtr addFunc)
 {
-    TRACE(int currentPhase = 0;)
+    IFTRACE(int currentPhase = 0;)
     addBranchFunc = addFunc;
     renormalizeFunc = &PhaseSolver::fullRenormalize;
     initGlobalRelabel();
@@ -51,10 +51,10 @@ void PhaseSolver::solve(AddBranchPtr addFunc)
     NodePtr strongBranch = getLowestBranch();
     while (strongBranch != nil) {
 	NodeLabel strongLabel =  strongBranch->getLabel();
-	TRACE(
+	IFTRACE(
 	    if ( strongLabel != currentPhase) {
 		currentPhase = strongLabel;
-		trout << "Phase " << currentPhase << endl;
+		TRACE(trout << "Phase " << currentPhase << endl;);
 	    }
 	)
 	<<terminate early based on counting labels>>
@@ -76,8 +76,7 @@ execution.
 <<terminate early based on counting labels>>=
 #ifdef TERM_LABELS
 	if ((labelCount[strongLabel - 1] == 0) && 
-(strongLabel > maxInitialLabel)  &&		// TTT DSHHACK
-	    (strongLabel > INIT_WEAK_LABEL))
+	    (strongLabel > maxInitialLabel))
 	{
 	    Boolean earlyTerm = FALSE;
 	    if (relabelFrequency > 0.0) {
@@ -2281,7 +2280,7 @@ branch.
 <<Solver method implementations>>=
 void PhaseSolver::setSpInitialNodeStatus()
 {
-maxInitialLabel = 0;		// XXX dsh hack
+    maxInitialLabel = INIT_WEAK_LABEL;
     for (int i = 1; i <= numNodes; i++) {
 	Node& node = nodes[i];
 	if (node.getExcess() > 0) {
@@ -2294,11 +2293,13 @@ maxInitialLabel = 0;		// XXX dsh hack
 	}
 	labelCount[node.getLabel()]++;
 	node.resetIterations();
-if (node.getLabel() > maxInitialLabel) maxInitialLabel = node.getLabel();
+	if (node.getLabel() > maxInitialLabel) {
+	    maxInitialLabel = node.getLabel();
+	}
     }
 }
 <<Solver data>>=
-    int maxInitialLabel;		// XXX dsh hack
+    int maxInitialLabel;
 <<default Solver constructor>>=
     maxInitialLabel = 0;
 @ %def setSpInitialNodeStatus
@@ -2715,7 +2716,6 @@ for subsequence processing.
     (edgep->residCapacity(neighbor) > 0))	// hack - no resid cap check
     {
 	    neighbor.distance = dist;
-	    //neighbor.setLabel(dist); 	// don't label - using relabelBranch
 	    putNodeQ(neighbor);
     }
 @ After we have performed the BFS, the labels are all initialized to
@@ -2731,15 +2731,19 @@ putting it in a bucket).  Other strong nodes go into buckets, and
 any other nodes are initialized and ready to go.  For all nodes,
 we update the label count appropriately.
 <<scan nodes and put in buckets>>=
-    maxInitialLabel = 0;		// DSHHACK
+    maxInitialLabel = INIT_WEAK_LABEL;
     for (int i = 1; i <= numNodes; i++) {
 	Node& node = nodes[i];
-	if (node.isRootNode()) {
+	if ((&node == sourceNode) || (&node == sinkNode)) {
+	    continue;
+	}
+	if (node.isRootNode() && (node.distance < MAXINT)) {
 	    relabelBranch(node);
 	}
 	if (node.getExcess() > 0) {
 	    if (node.distance == MAXINT) {
 		setBranchLabel(node, numNodes);
+		continue;
 	    } else {
 		addStrongBranch(node);
 	    }
@@ -2753,7 +2757,6 @@ we update the label count appropriately.
 	labelCount[node.getLabel()]++;
 	node.resetIterations();
 	if (node.getLabel() > maxInitialLabel) {
-	    // DSHHACK
 	    maxInitialLabel = node.getLabel();
 	}
     }
