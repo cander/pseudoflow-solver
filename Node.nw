@@ -440,6 +440,26 @@ the current node when done.
     edge.increaseFlow(flow);
     split();
 @
+During flow recovery, we wish to remove all arcs from the graph
+that have zero flow on them.  This is done most efficiently
+by iterating over the arcs on each node.
+Perhaps this should use [[getResideCapacity]] instead of
+[[getFlow]].
+<<Node methods>>=
+    void pruneZeroFlowArcs();
+<<Node method implementations>>=
+void Node::pruneZeroFlowArcs()
+{
+    resetIterations();
+    while (hasMoreNeighbors()) {
+	Edge& edge = getCurrentNeighbor();
+	if (edge.getFlow() == 0) {
+	    neighbors.removeCurrentElement(&edge);
+	}
+	advanceNeighbors();
+    }
+}
+@ %def pruneZeroFlowArcs
 We need a default constructor because we will be creating an
 array of nodes in bulk when we know how many of them are
 in the graph.
