@@ -372,7 +372,7 @@ void PhaseSolver::merge(Node& strong, Node& weak, Edge& edge)
 
     Node& strongRoot = *strong.rehang();
     weak.addChild(strong, edge);
-    CHECK_TREE(weak, weak.getParentEdge());
+weak.checkTree(weak.getParentEdge());
     CHECK_TREE(*weak.getRoot(), nil);
 
     // renormalize the tree
@@ -2768,6 +2768,7 @@ INLINE void PhaseSolver::increaseNodeLabel(Node& node)
 	incrementLabel(node);
 	STATS(numRelabels++);
     }
+    CHECK_TREE(node, node.getParentEdge()); 	// check monotonicity
 }
 @ %def increaseNodeLabel
 This labeling method sets the label to the distance from the node to the
