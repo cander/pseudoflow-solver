@@ -1526,6 +1526,13 @@ void PhaseSolver::saturateSourceSinkArcs()
 {
     for (int i = 0 ; i < numEdges; i++) {
 	Edge& edge = edges[i];
+	if ((edge.getSource() == sourceNode) ||
+	    (edge.getDest() == sinkNode))
+	{
+	    edge.saturate();
+	    continue;
+	}
+
 	if (edge.getSource() == sourceNode) {
 	    FlowAmount excess = edge.saturate();
 	    Node& srcAdjNode = *edge.getDest();
@@ -1911,19 +1918,13 @@ depending on whether it has positive or negative excess.
 <<Solver method implementations>>=
 void PhaseSolver::saturateAllArcs()
 {
+    saturateSourceSinkArcs();
+
     for (int i = 0 ; i < numEdges; i++) {
 	Edge& edge = edges[i];
-	FlowAmount excess = edge.saturate();
+	if (edge.getFlow() == 0) {
+	    FlowAmount excess = edge.saturate();
 
-	if (edge.getTail() == sourceNode) {
-	    Node& srcAdjNode = *edge.getHead();
-	    srcAdjNode.removeNeighbor(edge);
-	    srcAdjNode.incrementExcess(excess);
-	} else if (edge.getHead() == sinkNode) {
-	    Node& sinkAdjNode = *edge.getTail();
-	    sinkAdjNode.decrementExcess(excess);
-	    sinkAdjNode.removeNeighbor(edge);
-	} else {
 	    edge.getTail()->decrementExcess(excess);
 	    edge.getHead()->incrementExcess(excess);
 	}
@@ -1940,6 +1941,7 @@ void PhaseSolver::convertToFlow()
 {
     currentMark = 1024;
     <<replace source and sink arcs>>
+    printExcesses();
     for (int i = 1; i <= numNodes; i++) {
 	Node& node = nodes[i];
 	if (&node == sourceNode || &node == sinkNode) {
@@ -1949,6 +1951,24 @@ void PhaseSolver::convertToFlow()
 	    pushRootExcess(node);
 	}
     }
+}
+<<Solver public declarations>>=
+    void printExcesses();
+<<Solver method implementations>>=
+void PhaseSolver::printExcesses()
+{
+    int positiveExcess = 0;
+    int negativeExcess = 0;
+    for (int i = 1; i <= numNodes; i++) {
+	Node& node = nodes[i];
+	if (node.getExcess() < 0) {
+	    negativeExcess += node.getExcess();
+	} else if (node.getExcess() > 0) {
+	    positiveExcess += node.getExcess();
+	}
+    }
+    cout << "positive excess=" << positiveExcess 
+         << " negative excess=" << negativeExcess << endl;
 }
 @ %def convertToFlow
 <<Solver data>>=
@@ -2004,6 +2024,7 @@ void PhaseSolver::pushRootExcess(Node& node)
 	    }
 	} else {
 	    assert("There must be a path to the source/sink" == nil);
+	    return;
 	}
 
 	if (node.getExcess() != 0) {
@@ -2040,8 +2061,8 @@ PhaseSolver::visitNode(Node& node, Node& prevNode, FlowAmount& bottleCap,
     while (node.hasMoreNeighbors()) {
 	Edge& neighborEdge = node.getCurrentNeighbor();
 	Node& neighbor = *neighborEdge.getOtherNode(&node);
-	FlowAmount residCap = neighborEdge.residCapacity(
-				    seekingSource ? node : neighbor);
+	FlowAmount residCap = neighborEdge.reductionCapacity(
+				    seekingSource ? neighbor : node);
 	if ((&neighbor != &prevNode) && (residCap > 0)) {
 	    <<visit neighbor node>>
 	}
@@ -2094,7 +2115,7 @@ are moving flow along.
 void PhaseSolver::reduceFlow(Node& from, Node& to, Edge& edge, 
 			     FlowAmount amt, Boolean positiveExcess)
 {
-    edge.decreaseFlow(from, (positiveExcess ? amt : -amt));
+    edge.reduceFlow(amt);
 
     if (edge.residCapacity(from) == 0) {
 	TRACE(trout << "Removing " << edge << " from " << from.getId() << endl);
@@ -2366,8 +2387,9 @@ void PhaseSolver::dumpNodes(ostream& out)
 	     out << setw(8) <<
 		 (node.isStrong(FALSE) ? "strong" : "weak");
 	 }
-	 out << endl << "c" << endl;
+	 out << endl;
     }
+    out << endl << "c" << endl;
 }
 @ %def dumpNodes
 \subsection{File Boiler Plate}
