@@ -70,13 +70,9 @@ profile:
 	rm -f $(OBJECTS)
 	$(MAKE) OPTIONS="-pg -O" INLINE="$(PROFILE_INLINE)" all
 
-check:
-	rm -f $(OBJECTS)
-	$(MAKE) OPTIONS="-g -DDEBUG -DTRACING"
-
 trace:
 	rm -f $(OBJECTS)
-	$(MAKE) OPTIONS="-g -DTRACING"
+	$(MAKE) OPTIONS="-g -DDEBUG -DTRACING"
 
 optimize:
 	rm -f $(OBJECTS)
