@@ -377,11 +377,19 @@ We manage strong branches using an array of linked lists of Nodes.
 We refer to each such element in the array as a `bucket'.
 The buckets are indexed by the labels of the nodes.  Therefore,
 we need a bucket for each possible label - basically $n$ buckets.
+For each bucket, we keep the head and tail of the list so that
+we can manage them as either FIFO or LIFO.
 <<Solver data>>=
-    NodePtr*	buckets;
+    NodePtr*	bucketHeads;
+#ifdef LIFO_BUCKETS
+    NodePtr*	bucketTails;
+#endif /* LIFO_BUCKETS */
 <<default Solver constructor>>=
-    buckets = nil;
-@ %def buckets
+    bucketHeads = nil;
+#ifdef LIFO_BUCKETS
+    bucketTails = nil;
+#endif /* LIFO_BUCKETS */
+@ %def bucketHeads bucketTails
 Because we process the lowest labeled branch, we need a way to find
 the strong branch quickly.  At the moment, we just search the list
 sequentially looking for the lowest labeled, non-empty bucket.  To
@@ -410,18 +418,37 @@ void PhaseSolver::addStrongBranch(Node& root)
 				 (root.getExcess() > 0));
     CHECK_TREE(root, nil);
     // put in correct bucket
-    if (buckets[label] == nil) {
+    if (bucketHeads[label] == nil) {
 	root.setNextNil();
-	buckets[label] = &root;
+	bucketHeads[label] = &root;
+#ifdef LIFO_BUCKETS
+	bucketTails[label] = &root;
+#endif /* LIFO_BUCKETS */
     } else {
-	root.setNext(buckets[label]);
-	buckets[label] = &root;
+#ifdef LIFO_BUCKETS
+	if (lastRoot != &root) {
+	    bucketTails[label]->setNext(&root);
+	    bucketTails[label] = &root;
+	    root.setNextNil();
+	} else {
+	    // it's the same root we deal with before - put it at the head
+	    root.setNext(bucketHeads[label]);
+	    bucketHeads[label] = &root;
+	}
+#else /* !LIFO_BUCKETS -i.e. FIFO */
+	root.setNext(bucketHeads[label]);
+	bucketHeads[label] = &root;
+#endif /* LIFO_BUCKETS */
     }
     // look for new, lower label
     if (label < lowestLabel) {
 	lowestLabel = label;
     }
 }
+<<Solver data>>=
+    NodePtr lastRoot;
+<<default Solver constructor>>=
+    lastRoot = nil;
 @ %def addStrongBranch
 As the algorithm runs, we need to remove the lowest labeled branch.
 First we need to locate the lowest labeled bucket, then we need to
@@ -439,9 +466,14 @@ NodePtr PhaseSolver::getLowestBranch()
 {
     NodePtr result = nil;
     while (lowestLabel < numNodes) {
-	if (buckets[lowestLabel] != nil) {
-	    result = buckets[lowestLabel];
-	    buckets[lowestLabel] = result->getNext();
+	if (bucketHeads[lowestLabel] != nil) {
+	    result = bucketHeads[lowestLabel];
+	    bucketHeads[lowestLabel] = result->getNext();
+#ifdef LIFO_BUCKETS
+	    if (bucketHeads[lowestLabel] == nil) {
+		bucketTails[lowestLabel] = nil;
+	    }
+#endif /* LIFO_BUCKETS */
 	    result->setNextNil();
 	    break;
 	} else {
@@ -449,6 +481,7 @@ NodePtr PhaseSolver::getLowestBranch()
 	}
     }
 
+    lastRoot = result;
     return result;
 }
 @ %def getLowestBranch
@@ -557,13 +590,19 @@ allocate an extra node (node zero), that never really gets used.
     }
     nodes = new Node[numNodes + 1];
     edges = new Edge[numEdges];
-    buckets = new NodePtr[numNodes + 1];
+    bucketHeads = new NodePtr[numNodes + 1];
+#ifdef LIFO_BUCKETS
+    bucketTails = new NodePtr[numNodes + 1];
+#endif /* LIFO_BUCKETS */
     nodeDegrees = new int[numNodes + 1];
     labelCount = new int[numNodes + 1];
 
     for (int i = 0; i <= numNodes; i++) {
 	nodeDegrees[i] = labelCount[i] = 0;
-	buckets[i] = nil;
+	bucketHeads[i] = nil;
+#ifdef LIFO_BUCKETS
+	bucketTails[i] = nil;
+#endif /* LIFO_BUCKETS */
     }
 <<local variables for reading>>=
     int numTokens = 0;
