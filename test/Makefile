@@ -11,7 +11,7 @@ CFLAGS  = -I.. -Wall $(OPTIONS) $(INLINE) $(SITE_CFLAGS) \
 	  $(STANDARD_FLAGS) $(EXTRA_FLAGS)
 
 LDPROF  =
-LDFLAGS = -L.. -lpsa $(LDPROF)
+LDFLAGS = -L.. -lpsa $(LDPROF) $(LOCAL_LIBS)
 
 .C.o: ;		$(CXX) -c $(CFLAGS) $*.C
 
