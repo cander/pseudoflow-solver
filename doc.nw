@@ -10,13 +10,13 @@
 \makeatother
 \pagestyle{noweb}\raggedbottom\noweboptions{shift}
 
-\title{ Lowest Label, Phase Pseudoflow Algorithm Source Code}
+\title{Pseudoflow Solvers for the Maximum Flow Problem}
 \author{Charles Anderson}
 \begin{document}
 \maketitle
 \section*{Preface}
-Below is an implementation of the lowest label, phase variant
-of the pseudoflow algorithm.
+This is a collection of implementations of various forms of
+the pseudoflow algorithm and heuristics for it.
 
 \tableofcontents
 

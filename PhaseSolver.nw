@@ -1,4 +1,4 @@
-\section{Phase-based Solver}
+\section{Pseudoflow Solver}
 The solver manages the entire problem instance.  Initially
 this includes the nodes and edges.  These are stored as contiguous
 arrays (as opposed to allocating each one individually with [[new]])
