@@ -30,6 +30,10 @@ LIBNAME	 = libpsa.a
 PROGRAMS = llps pllps gpps
 DOCFILES = doc.dvi doc.ps doc.aux doc.log allcode.tex doc.tex doc.toc
 
+# files we distribute in a tarball
+DISTFILES = README.html Makefile site.mk $(SRCS) types.h debug.h $(WEBFILES) doc.nw 
+
+
 NOTANGLE=notangle
 SHELL=/bin/sh
 # set this for CPIF and then distribute tools with bad timestamps...
@@ -75,7 +79,7 @@ PmaxToMax: PmaxToMax.o $(LIBNAME)
 	$(CXX) -o PmaxToMax PmaxToMax.o $(LDFLAGS)
 
 clean: 
-	rm -f $(DOCFILES) $(OBJECTS) $(PROGRAMS) buildinfo.c
+	rm -f $(DOCFILES) $(OBJECTS) $(PROGRAMS) $(LIBNAME) buildinfo.c
 
 clobber:	clean
 		rm -f $(SRCS)
@@ -131,6 +135,10 @@ twoup.ps: doc.ps
 cvsignore:
 	echo "*.doc *.dvi *.ps *.log *.toc *.tex *.aux *.swp" > .cvsignore
 	echo $(SRCS) .cvsignore >> .cvsignore
+
+# should build and include doc.ps
+tarball: clean purec 
+	tar cvf pseudoflow.tar $(DISTFILES)
 
 # dependencies - these should be done automatically
 
