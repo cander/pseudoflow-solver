@@ -63,6 +63,7 @@ void PhaseSolver::solve(AddBranchPtr addFunc)
 	checkForRelabel();
 	strongBranch = getLowestBranch();
     }
+    IFDEBUG(checkMergers(););
 }
 @ %def solve
 For each possible value for a node's label, if we track the number of 
@@ -2216,7 +2217,11 @@ void PhaseSolver::setSpInitialNodeStatus()
 	    <<set label to minimum of weak neighbors>>
 //node.setLabel(INIT_STRONG_LABEL);
 	    addStrongBranch(node);
-	} 
+	}  else if (node.getLabel() == MAXINT) {
+	    // notice with cher graphs that some zero-deficit nodes are
+	    // unreachable during initialization???
+	    node.setLabel(INIT_WEAK_LABEL);
+	}
 	labelCount[node.getLabel()]++;
 	node.resetIterations();
     }
@@ -2259,7 +2264,10 @@ node.setLabel(minLabel);
 During the execution of the algorithm, regardless of the initialization
 method used we can periodically relabel nodes based on their distances to the 
 sink in the residual graph.   Setting the labels this way `guides' the excess
-from the strong nodes toward the sink node.  Because global relabeling is 
+from the strong nodes toward the sink node{\footnote Note that because
+the saturate-all method may create deficit nodes that are not adjacent to the
+sink, we actually set the distances to the nearest deficit node.  Therefore,
+we are directing flow towards deficit nodes rather than the sink.}.  Because global relabeling is 
 a rather expensive operation, we don't want to perform it too often.
 
 We cannot necessarily blindly set the
@@ -2323,43 +2331,31 @@ void PhaseSolver::globalRelabel()
 {
     STATS(numGlobalRelabels++);
     TRACE( trout << "Begin global relabeling.  Lowest label: " << lowestLabel << endl; );
-    <<set initial distance labels to infinity>>
+    <<set initial distance>>
     <<search backwards from the sink labeling nodes>>
     <<relabel/remove each branch>>
     IFDEBUG( checkBranches(); )
 }
 @ %def globalRelabel
-We start by labeling all nodes with an initial distance of [[MAXINT]].
-<<set initial distance labels to infinity>>=
-    for (int i = 1; i <= numNodes; i++) {
-	nodes[i].distance = MAXINT;
-    }
-@ Next, we iterate over all sink-adjacent nodes setting distance labels.
-One case to be aware of is if a sink-adjacent node is already strong. 
-In this case, it is not considered adjacent to the sink.  However, it may
-be reachable from some other sink-adjcent node.
-{\em Note, technically we should also check if the node is a root.  If
-we use saturate-all, a sink-adjacent node may start strong, then
-merge and become weak.  Do we care??}
-<<search backwards from the sink labeling nodes>>=
+We start by labeling most nodes with an initial distance of [[MAXINT]].
+The exception is nodes with negative excess.  Normally, these would
+be adjacent to the sink, but with saturate-all, they can be anywere
+in the graph.  Because they are weak roots, we will label them
+with a distance of one, even though they are not adjacent to
+the sink.  
+<<set initial distance labels>>=
     resetQ();
-    for(sinkNode->resetIterations();
-        sinkNode->hasMoreNeighbors();
-	sinkNode->advanceNeighbors())
-    {
-	Edge& edge = sinkNode->getCurrentNeighbor();
-	Node& edgeSource = *edge.getSource();
-	Node& edgeDest = *edge.getDest();
-	if ((&edgeSource != sourceNode) && (&edgeDest == sinkNode)) {
-	    // XXX is this an error source for sat-all?
-	    if (edgeSource.getExcess() <= 0) {	// XXX check if weak? 
-		edgeSource.distance = 1;
-		putNodeQ(edgeSource);
-	    }
+    for (int i = 1; i <= numNodes; i++) {
+	Node& node = nodes[i];
+	if (node.getExcess() < 0) {
+	    node.distance = 1;
+	    putNodeQ(node);
+	} else {
+	    node.distance = MAXINT;
 	}
     }
-@ Once we've labeled the sink-adjacent nodes and put them in the queue,
-we continue processing nodes in the queue until done.  This performs
+@ Once we've labeled the nodes and put the negative excess ones in the queue,
+we processing nodes in the queue until done.  This performs
 a breadth-first search.
 <<search backwards from the sink labeling nodes>>=
     for (NodePtr nodep = getNextNodeQ(); nodep != nil; nodep = getNextNodeQ()) {
