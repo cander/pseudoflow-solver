@@ -1,9 +1,15 @@
 
 include site.mk
 
-OPTIONS	= -g 
-INLINE  = -DINLINE_NODE 
-CFLAGS	= -Wall $(OPTIONS) $(INLINE) $(SITE_CFLAGS) 
+OPTIONS	= -g -DTRACING -DDEBUG
+
+INLINE_ALL  = -DINLINE_NODE -DINLINE_EDGELIST -DINLINE_EDGE -DINLINE_SOLVER
+INLINE  = $(INLINE_ALL)
+PROFILE_INLINE = $(INLINE_ALL)
+#EXTRA_FLAGS =
+
+CFLAGS	= -Wall $(OPTIONS) $(INLINE) $(SITE_CFLAGS) $(EXTRA_FLAGS)
+
 
 # after installation, make doc.dvi for literate version
 
@@ -59,7 +65,7 @@ buildinfo.c: .
 # special build version for various purposes
 profile:
 	rm -f $(OBJECTS)
-	$(MAKE) OPTIONS="-pg -O" INLINE="" all
+	$(MAKE) OPTIONS="-pg -O" INLINE="$(PROFILE_INLINE)" all
 
 check:
 	rm -f $(OBJECTS)
@@ -91,7 +97,8 @@ doc.ps: doc.dvi
 	dvips -o doc.ps doc.dvi
 
 twoup.ps: doc.ps
-	psselect -r doc.ps | psnup -2 -pletter > twoup.ps
+	# psselect -r doc.ps | psnup -2 -pletter > twoup.ps
+	cat doc.ps | psnup -2 -pletter > twoup.ps
 
 cvsignore:
 	echo "*.doc *.dvi *.ps *.log *.toc *.tex *.aux" > .cvsignore
