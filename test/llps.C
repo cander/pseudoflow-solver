@@ -4,17 +4,46 @@
 #include <iostream.h>
 #include <fstream.h>
 #include <time.h>
+#include <stdlib.h>
 
-
-int main(int argc, char** argv)
+void 
+usage()
 {
-    if (argc != 3) {
-	cerr << "Usage: llps input-graph flow-output" << endl;
+    cerr << "Usage: llps [-d] [-f] input-graph flow-output" << endl;
+}
+
+int 
+main(int argc, char** argv)
+{
+    Boolean dumpNodes = FALSE;
+    Boolean writeFlow = FALSE;
+
+    // parse arguments
+    int ch;
+    while ((ch = getopt(argc, argv, "df")) != EOF) {
+	switch (ch) {
+	case 'd':
+	    dumpNodes = TRUE;
+	    break;
+	case 'f':
+	    writeFlow = TRUE;
+	    break;
+	default:
+	    usage();
+	    return 1;
+	}
+    }
+
+    argc -= optind;
+    argv += optind;
+    
+    if (argc != 2) {
+	usage();
 	return 1;
     }
 
-    const char* instanceName = argv[1];
-    const char* outputName = argv[2];
+    const char* instanceName = argv[0];
+    const char* outputName = argv[1];
 
     PhaseSolver solver;
     Timer initTimer;
@@ -24,12 +53,16 @@ int main(int argc, char** argv)
 
     if (readOK) {
 	cout << "read problem instance OK" << endl;
+	Timer treeTimer;
 	Timer solveTimer;
 	solveTimer.start();
+	treeTimer.start();
 	solver.establishInitialTree();
+	treeTimer.stop();
 	solver.solve();
 	solveTimer.stop();
 	cout << "done solving: " << solveTimer << endl;
+	cout << "time to establish tree: " << treeTimer << endl;
 
 	ofstream dout(outputName, ios::out);
 	if (dout == nil) {
@@ -49,8 +82,13 @@ int main(int argc, char** argv)
 	dout << "c  timeToInitialize: " << initTimer << endl;
 	dout << "c  timeToSolve: " << solveTimer << endl;
 
-	solver.writeDimacsFlow(dout);
-	//solver.dumpNodes(dout);
+	if (writeFlow) {
+	    solver.writeDimacsFlow(dout);
+	}
+	if (dumpNodes) {
+	    solver.dumpNodes(dout);
+	}
+
 	dout.close();
     }
 
