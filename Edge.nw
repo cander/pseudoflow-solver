@@ -43,7 +43,7 @@ INLINE NodePtr Edge::getTail() const
 { return (isForward == TRUE) ? source : dest; }
 INLINE NodePtr Edge::getHead() const
 { return (isForward == TRUE) ? dest : source; }
-@ %getTail getHead
+@ %def getTail getHead
 Regardless of the orientation of the node, given one endpoint we
 want to be able to get the other node.
 <<Edge methods>>=
@@ -119,6 +119,14 @@ void Edge::init(Node& src, Node& dst, FlowAmount cap)
     isForward = TRUE;
 }
 @ %def init
+At the begining of the algorithm, we need to saturate the
+source- and sink-adjacent edges.
+<<Edge methods>>=
+    FlowAmount saturate();
+<<Edge method implementations>>=
+FlowAmount Edge::saturate()
+{ flow = capacity; return flow; }
+@ %def saturate
 We need a way to print the contents of an edge to an output stream,
 mostly for debugging.
 <<C++ overhead>>=
@@ -139,6 +147,26 @@ ostream& operator<<(ostream& out, const Edge& edge)
 <<Edge header include files>>=
 class ostream;
 @
+Here's another debugging function that just validates that a given
+edge is in fact and edge between two specified nodes.  We don't care
+which is the source or destination.  If the edge or nodes are not 
+valid, we return false so that the caller can throw an assertion 
+failure.
+<<Edge methods>>=
+    Boolean validateEdge(Node& node1, Node& node2);
+<<Edge method implementations>>=
+Boolean Edge::validateEdge(Node& node1, Node& node2)
+{
+    Boolean result = FALSE;
+    if (source == &node1) {
+	result = (dest == &node2) ? TRUE : FALSE;
+    } else {
+	result = (dest == &node1) ? TRUE : FALSE;
+    }
+
+    return result;
+}
+@ %def validateEdge
 \subsubsection{File Boiler Plate}
 We start with the boiler-plate implementation file. 
 <<*>>=
