@@ -46,6 +46,7 @@ void PhaseSolver::solve(AddBranchPtr addFunc)
     TRACE(int currentPhase = 0;)
     addBranchFunc = addFunc;
     renormalizeFunc = &PhaseSolver::fullRenormalize;
+    <<establish initial global relabel>>
     if (relabelFrequency > 0.0) {
 	relabelCounter = numNodes;	// muliply by frequency?
     } else {
@@ -71,6 +72,14 @@ void PhaseSolver::solve(AddBranchPtr addFunc)
 @ %def solve
 Periodically, we may wish to perform global relabeling operations.
 This is rather expensive, so we don't want to do it very often.
+Note that this chunk of code is shared between the immediate and 
+delayed solve functions.
+<<establish initial global relabel>>=
+    if (relabelFrequency > 0.0) {
+	relabelCounter = numNodes;	// muliply by frequency?
+    } else {
+	relabelCounter = MAXINT;
+    }
 <<check for global relabel>>=
     if (numRelabels > relabelCounter) {
 	globalRelabel();
@@ -839,6 +848,7 @@ void PhaseSolver::delayedNormalizeSolve(AddBranchPtr addFunc)
 {
     addBranchFunc = addFunc;
     renormalizeFunc = &PhaseSolver::strongOnlyRenormalize;
+    <<establish initial global relabel>>
 
     int currentPhase = 0;
     NodePtr strongBranch = nil; 
@@ -846,16 +856,8 @@ void PhaseSolver::delayedNormalizeSolve(AddBranchPtr addFunc)
 
     while (TRUE) {
 	<<get strong branch - normalize if needed>>
-
-	if ((labelCount[strongLabel - 1] == 0) && 
-	    (strongLabel > INIT_WEAK_LABEL))
-	{
-	    cout << "Breaking at phase " << strongLabel << endl;
-	    break;
-	}
-
+	<<terminate early based on counting labels>>
 	processBranch(*strongBranch);
-	<<check for global relabel>>
     }
 }
 @ %def delayedNormalizeSolve
@@ -887,6 +889,7 @@ which might lead to a lower phase, which is why we put it back.
     if (strongLabel != currentPhase) {
 	addStrongBranch(*strongBranch);	// should addHead
 	performDeferredNormalizations();
+	<<check for global relabel>>
 @
 Now, we try again to get a new branch.  If the label is 
 different than the current phase, then we really are starting
@@ -1698,7 +1701,10 @@ and don't bother doing anything else.
 	if ((edge.getSource() == sourceNode) &&
 	    (edge.getDest() == sinkNode))
 	{
-	    edge.saturate();
+	    if (edge.residCapacity()) {
+		// we see these arcs twice: source and sink - only sat once
+		edge.saturate();
+	    }
 	    continue;
 	}
 @ When we saturate an edge, we remove it from the list
@@ -2135,17 +2141,19 @@ will fix up the labels.
 void PhaseSolver::buildSpTree()
 {
     saturateSourceSinkArcs();
-
     <<initialize all node labels>>
+    resetQ();
 
     for(sinkNode->resetIterations();
         sinkNode->hasMoreNeighbors();
 	sinkNode->advanceNeighbors())
     {
-	<<build weak branch>>
+	<<load queue with weak roots>>
     }
 
+    <<perform bfs labeling>>
     setSpInitialNodeStatus();	
+
     IFDEBUG( checkBranches(); );
 }
 @ %def buildSpTree
@@ -2155,7 +2163,7 @@ First, we need to set all the labels to infinity.
 	nodes[i].setLabel(MAXINT);
     }
 @ Then, we iterate over each sink-adjacent node.
-<<build weak branch>>=
+<<load queue with weak roots>>=
     Edge& edge = sinkNode->getCurrentNeighbor();
     Node& edgeSource = *edge.getSource();
     Node& edgeDest = *edge.getDest();
@@ -2166,74 +2174,46 @@ First, we need to set all the labels to infinity.
     }
 @ Once we're sure we a sink-adjacent node and it's not the source,
 we label it, and start investigating its neighbors.
-<<build weak branch>>=
+<<load queue with weak roots>>=
     edgeSource.setLabel(1);
-    buildSpBranch(edgeSource);
-    CHECK_TREE(edgeSource, nil);
-@  The real work of the search is done recursively in this function.
-It scans every neighbor looking for nodes with labels greater
-than what we can offer going via this node.
-<<Solver methods>>=
-    void buildSpBranch(Node& node);
-<<Solver method implementations>>=
-void PhaseSolver::buildSpBranch(Node& node)
-{
-    NodeLabel dist = node.getLabel() + 1;
-    for (node.resetIterations();
-	 node.hasMoreNeighbors();
-	 node.advanceNeighbors())
-    {
-	Edge& neighborEdge = node.getCurrentNeighbor();
-	Node& neighbor = *neighborEdge.getOtherNode(&node);
-	FlowAmount residCap = neighborEdge.residCapacity(neighbor);
+    putNodeQ(edgeSource);
 
-	if ((neighbor.getExcess() == 0) && (residCap > 0)) {
-	    if (neighbor.getLabel() > dist) {
-		<<add node to our branch>>
-		// recursively examine neighbor
-		buildSpBranch(neighbor);
-	    } else if ((neighbor.getLabel() == dist) &&
-	               (neighbor.getParentCapacity() < residCap))
-	    {
-		// we have more capacity for same label
-		<<add node to our branch>>
-		// don't examin neigbor if we have same label
-	    }
+@ Once the queue is loaded with the sink-adjacent nodes, we just pull nodes
+out of the queue until there are no more.
+<<perform bfs labeling>>=
+    for (NodePtr nodep = getNextNodeQ(); nodep != nil; nodep = getNextNodeQ()) {
+	int dist = nodep->getLabel() + 1;
+	ElIterator it = nodep->getNeighbors();
+	for (EdgePtr edgep = it.getNext(); edgep != nil; edgep = it.getNext()) {
+	    <<label weak neighbor as needed>>
 	}
     }
-}
-@ %def buildSpTree
-Adding a node to our branch involve removing it's current parent (if
-any) and adding it as a child of us.
-<<add node to our branch>>=
-    neighbor.setLabel(dist);
-    if (neighbor.isRootNode() == FALSE) {
-	neighbor.split();
-	relabelChildren(neighbor);
+@ If our neighbor has zero excess and we have residual capacity, then
+we might be his shortest path to the sink.  If his label is greater than
+our distance, it should be [[MAXINT]], and we are a shortest path for him.
+Then, we become his parent, and we want to investigate all of his neighbors.
+
+If his label is our distance, then we are not any closer, but may we have
+more capacity.  In this case, we don't need to queue him investigate his 
+neighbors because he should already be in the queue from the time he got
+labeled.
+<<label weak neighbor as needed>>=
+    Node& neighbor = *edgep->getOtherNode(nodep);
+    FlowAmount residCap = edgep->residCapacity(neighbor);
+    if ((neighbor.getExcess() == 0) && (residCap > 0)) {
+	if (neighbor.getLabel() > dist) {
+	    neighbor.setLabel(dist);
+	    putNodeQ(neighbor);
+	    nodep->addChild(neighbor, *edgep);
+	} else if ((neighbor.getLabel() == dist) &&
+		   (neighbor.getParentCapacity() < residCap))
+	{
+	    neighbor.split();
+	    nodep->addChild(neighbor, *edgep);
+	}
     }
-    TRACE( trout << "attaching " << neighbor.getId() << " to " 
-                 << node.getId() << endl;)
-    node.addChild(neighbor, neighborEdge);
-@ One glaring inefficiency of this plan is that if we change the
-parent of a node, we then have to go through an relabel its 
-children.  ({\em I must be doing something lame}).  Hopefully,
-this won't happen very often.
-<<Solver methods>>=
-    void relabelChildren(Node& node);
-<<Solver method implementations>>=
-void PhaseSolver::relabelChildren(Node& node)
-{
-    NodeLabel dist = node.getLabel() + 1;
-    for (node.resetIterations();
-	 node.hasMoreChildren();
-	 node.advanceChildren())
-    {
-	Node& child = node.getCurrentChild();
-	child.setLabel(dist);
-	relabelChildren(child);
-    }
-}
-@ %def relabelChildren
+
+@
 Once we have built the weak trees, we need to establish the initial status
 of all nodes.  We don't want to use the usual function, 
 [[setInitialNodeStatus]], because it will set all the  weak labels to one
@@ -2605,8 +2585,10 @@ void PhaseSolver::returnSinkAdjDeficit()
 	if (&sinkAdjNode != sinkNode) {
 	    FlowAmount excess = sinkAdjNode.getExcess();
 	    if (excess < 0) {
-		edge.reduceFlow(-excess);
-		sinkAdjNode.incrementExcess(-excess);
+		FlowAmount amt = -excess;
+		if (amt > edge.getFlow()) amt = edge.getFlow();
+		edge.reduceFlow(amt);
+		sinkAdjNode.incrementExcess(amt);
 		TRACE( trout << "returned " << -excess << " units from "
 		             << sinkAdjNode.getId() << " to sink" << endl; );
 	    }
