@@ -2,16 +2,17 @@
 #define DEBUG_H
 
 #ifdef DEBUG
-  #define IFDEBUG  if (1)
+  extern Boolean checkTree;
+  #define IFCHECK  if (checkTree)
 #else /*!DEBUG*/
-  #define IFDEBUG  if (0)
+  #define IFCHECK  if (0)
   #define NDEBUG		// disable assertions
 #endif /*DEBUG*/
 
 #include <assert.h>
 
 #define CHECK_TREE(node, edgePtr)               \
-    IFDEBUG {                                   \
+    IFCHECK {                                   \
         if (!(node).checkTree(edgePtr)) {   \
             (node).printTree(0);                 \
             abort();                            \
