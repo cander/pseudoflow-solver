@@ -10,11 +10,10 @@
 #endif /*DEBUG*/
 
 
-#define CHECK_TREE(node)                        \
+#define CHECK_TREE(node, edgePtr)               \
     IFDEBUG {                                   \
-        int mass = 0;                           \
-        if (!node->checkTree(nil, mass)) {      \
-            node->printTree(0);                 \
+        if (!(node).checkTree(edgePtr)) {   \
+            (node).printTree(0);                 \
             abort();                            \
         }                                       \
     }
