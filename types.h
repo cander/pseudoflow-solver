@@ -18,4 +18,7 @@ typedef Node* NodePtr;
 class Edge;
 typedef Edge* EdgePtr;
 
+inline int min(int x, int y) { return (x < y) ? x : y; }
+inline int max(int x, int y) { return (x > y) ? x : y; }
+
 #endif /*TYPES_H*/
