@@ -660,9 +660,7 @@ Simplex solver.  Here in the base class, we just check the label.
 NodePtr PhaseSolver::getLowestBranch()
 {
     NodePtr result = getLowestBucket();
-    if (result != nil) {
-	assert(result->getLabel() == lowestLabel);
-    }
+    assert((result != nil) ? (result->getLabel() == lowestLabel) : 1);
     return result;
 }
 @ %def getLowestBranch
@@ -1545,15 +1543,6 @@ excess.  Anything with positive excess is assumed to be
 strong, and everything else is assumed to be weak.
 Strong nodes are added as strong branches.
 
-{\em Note:} this code assumes that each node is it's own
-branch - i.e. no trees or paths have been built up.  
-If we have built any branches, then the non-root nodes will
-have zero excess, but we cannot immediately discern their
-status based simply on their excess.  In order to make this
-method useful to schemes that may build up branches, we
-check the label of the branch.  If it is still at the initial value
-from when the node was created, we assume it is safe for us to
-label it.
 <<Solver methods>>=
     void setInitialNodeStatus();
 <<Solver method implementations>>=
@@ -1561,28 +1550,52 @@ void PhaseSolver::setInitialNodeStatus()
 {
     for (int i = 1; i <= numNodes; i++) {
 	Node& node = nodes[i];
-	if (node.getLabel() == Node::INITIAL_LABEL) {
-	    if (node.getExcess() > 0) {	// ZERO DEFICIT
-		node.setLabel(INIT_STRONG_LABEL);
-		labelCount[INIT_STRONG_LABEL]++;
+	if (node.isRootNode()) {
+	    NodeLabel label = INIT_ZERO_LABEL;
+	    if (node.getExcess() > 0) {
+		label = INIT_STRONG_LABEL;
+	    } else if (node.getExcess() < 0) {
+		label = INIT_WEAK_LABEL;
+	    }
+	    labelBranch(node, label);
+
+	    if (node.getExcess() > 0) {
 		addStrongBranch(node);
-	    } else {
-		node.setLabel(INIT_WEAK_LABEL);
-		labelCount[INIT_WEAK_LABEL]++;
 	    }
 	}
     }
+    // assert(labelCount[INIT_WEAK_LABEL] + 
+   //          labelCount[INIT_STRONG_LABEL] == numNodes);
 }
+<<Solver data>>=
+    static const int INIT_STRONG_LABEL=2;
+    static const int INIT_WEAK_LABEL=1;
+    static const int INIT_ZERO_LABEL=1;
 @ %def setInitialNodeStatus
+This function sets the label of a node and all of its children.
+It also updates the count of how many nodes have each label value.
+<<Solver methods>>=
+    void labelBranch(Node& node, NodeLabel label);
+<<Solver method implementations>>=
+void PhaseSolver::labelBranch(Node& node, NodeLabel label)
+{
+    node.setLabel(label);
+    labelCount[label]++;
+
+    node.resetIterations();
+    while (node.hasMoreChildren()) {
+	Node& child = node.getCurrentChild();
+	labelBranch(child, label);
+	node.advanceChildren();
+    }
+    node.resetIterations();
+}
+@ %def labelBranch
 <<Solver protected memebers>>=
     int* labelCount;
 <<default Solver constructor>>=
     labelCount = nil;
 @ %def labelCount 
-<<Solver data>>=
-    static const int INIT_STRONG_LABEL=2;
-    static const int INIT_WEAK_LABEL=1;
-    static const int INIT_ZERO_LABEL=1;
 @ %def INIT_STRONG_LABEL INIT_WEAK_LABEL INIT_ZERO_LABEL
 \subsubsection{Blocking Path Initialization}
 A simple extension to the idea of just simply saturating the
@@ -1624,8 +1637,11 @@ void PhaseSolver::buildBlockingPathTree()
 {
     saturateSourceSinkArcs();
 
-    for (int i = 1; i <= numNodes; i++) {
-	Node& node = nodes[i];
+    for (sourceNode->resetIterations();
+        sourceNode->hasMoreNeighbors();
+	sourceNode->advanceNeighbors())
+    {
+	Node& node = *sourceNode->getCurrentNeighbor().getOtherNode(sourceNode);
 	if ((node.getExcess() > 0) && 
 	    (node.getLabel() == Node::INITIAL_LABEL))
 	{	
@@ -1744,12 +1760,16 @@ void PhaseSolver::buildGreedyPathTree()
 {
     saturateSourceSinkArcs();
 
-    for (int i = 1; i <= numNodes; i++) {
-	Node& node = nodes[i];
+    for (sourceNode->resetIterations();
+        sourceNode->hasMoreNeighbors();
+	sourceNode->advanceNeighbors())
+    {
+	Node& node = *sourceNode->getCurrentNeighbor().getOtherNode(sourceNode);
 	if ((node.getExcess() > 0) && 
 	    (node.getLabel() == Node::INITIAL_LABEL))
 	{	
-	    splittingPathPush(node, 10);
+	    int numSplits = 10;
+	    splittingPathPush(node, numSplits);
 	}
     }
 
@@ -1757,89 +1777,118 @@ void PhaseSolver::buildGreedyPathTree()
 }
 @ %def buildGreedyPathTree
 <<Solver methods>>=
-    Boolean splittingPathPush(Node& node, int remainingSplits);
+    void splittingPathPush(Node& node, int& remainingSplits);
 <<Solver method implementations>>=
-Boolean PhaseSolver::splittingPathPush(Node& /*node*/, int /*remainingSplits*/)
+void PhaseSolver::splittingPathPush(Node& node, int& remainingSplits)
 {
-    Boolean foundSink = FALSE;
-    /*
     node.setLabel(INIT_STRONG_LABEL);
-    labelCount[INIT_STRONG_LABEL]++;
-
     NodeExcess excess = node.getExcess();
-    Edge* bestOutEdge = nil;
+    EdgePtr bestOutEdge = nil;
+    FlowAmount bestEdgeCap = MAXINT;
     <<find best out-edge with split>>
 
-    FlowAmount flow = excess;
     if (bestOutEdge != nil) {
 	Node& otherNode = *bestOutEdge->getOtherNode(&node);
-	TRACE( trout << "push positive excess (" << flow << " from " 
-		     << node.getId() << " to " << otherNode.getId() << endl);
+	if ((bestEdgeCap < excess) && (remainingSplits <= 0)) {
+	    return;
+	}
+
+	TRACE( trout << "push positive excess (" 
+		     << ((excess < bestEdgeCap) ? excess : bestEdgeCap)
+		     << ") from " << node.getId() << " to " 
+		     << otherNode.getId() << endl);
 	         
-	bestOutEdge->increaseFlow(flow);
-	node.decrementExcess(flow);
-	otherNode.incrementExcess(flow);
 	otherNode.addChild(node, *bestOutEdge);
+	Boolean split = node.pushToParent();
+	if (split) {
+	    remainingSplits--;
+	}
 
 	<<recursively push flow out 2>>
+
     } else {
 	TRACE( trout << "can't push excess from " << node.getId() << endl; )
-	addStrongBranch(node);
     }
-    */
-
-    return foundSink;
 }
 @ %def blockingPathPush
+To find the best edge, we iterate over all of the neighbors.  
+We only consider nodes that haven't already been visited and 
+had flow pushed through them (as indicated by the label).  To
+be feasible and edge must have positive residual capacity.  Also,
+if we cannot split any more, we need it to have capacity greater
+than the excess.
 <<find best out-edge with split>>=
-    node.resetIterations();
-    while (node.hasMoreNeighbors()) {
+    for (node.resetIterations();
+	 node.hasMoreNeighbors();
+	 node.advanceNeighbors())
+    {
 	Edge& edge = node.getCurrentNeighbor();
-	if (edge.getOtherNode(&node)->getLabel() == Node::INITIAL_LABEL) {
-	    if (edge.residCapacity(node) <= 0) {
-		conintue;
+	Node& otherNode =  *edge.getOtherNode(&node);
+	if (otherNode.getLabel() == Node::INITIAL_LABEL) {
+	    FlowAmount edgeCap =  edge.residCapacity(node);
+	    if ((edgeCap <= 0) ||
+		((edgeCap <= excess) && (remainingSplits <= 0)))
+	    {
+		continue;
 	    }
-	    if (bestOutEdge == nil) {
-		bestOutEdge = &edge;
-	    } 
-	    if (edge.residCapacity(node) >= excess) {
-		if (bestOutEdge->residCapacity(node) > 
-		    edge.residCapacity(node)) 
-		{
-		    bestOutEdge = &edge;
-		}
-	    } else {
-		if (edge.residCapacity(node) > 
-		    bestOutEdge->residCapacity(node))
-		{
-		    bestOutEdge = &edge;
-		}
-	    }
+
+	    <<compare edge to best edge>>
 	}
-	node.advanceNeighbors();
-    }
-    node.resetIterations();
-
-<<recursively push flow out 2>>=
-    if (otherNode.getExcess() > 0) {	// ZERO_DEFICIT
-	foundSink = blockingPathPush(otherNode);
-    } else {
-	TRACE( trout << "found sink-adjacent node " << otherNode.getId() << endl;)
-	foundSink = TRUE;
-	CHECK_TREE(otherNode, nil);
-    }
-
-    if (foundSink) {
-	TRACE( trout << "relabeling "  << node.getId() << " as weak " << endl;)
-	labelCount[INIT_STRONG_LABEL]--;
-	node.setLabel(INIT_WEAK_LABEL);
-	labelCount[INIT_WEAK_LABEL]++;
     }
 @
-
-
+If this is the first feasible edge we've seen, it must be the best.
+<<compare edge to best edge>>=
+    if (bestOutEdge == nil) {
+	bestOutEdge = &edge;
+	bestEdgeCap = edgeCap;
+	continue;
+    } 
+@  We're looking an edge with capacity greater than the excess
+to avoid splits.
+If there are multiple such edges, we'll choose the minimal one - i.e.
+the edge with capacity closest to the excess.
+<<compare edge to best edge>>=
+    if (edgeCap > excess) {
+	if (bestEdgeCap > edgeCap) {
+	    bestOutEdge = &edge;
+	} else if (bestEdgeCap < excess) {
+	    bestOutEdge = &edge;
+	}
+    } 
+@ If we can't find an edge with capacity that exceeds the excess, 
+we want to find one that the most capacity.  Again, looking for 
+capacity closest to the excess.
+<<compare edge to best edge>>=
+    else {
+	if (edgeCap > bestEdgeCap) {
+	    bestOutEdge = &edge;
+	}
+    }
+@ When we go to push flow out of [[otherNode]], we want to keep our
+eyes open for reaching all the way to a sink-adjacent node.  If we
+pushed flow to [[otherNode]] and its excess isn't positive, it must
+be sink adjacent, so we can stop pushing.
+<<recursively push flow out 2>>=
+    if (otherNode.getExcess() > 0) {	
+	splittingPathPush(otherNode, remainingSplits);
+    } else {
+	TRACE( trout << "found sink-adjacent node " << otherNode.getId() << endl;)
+	CHECK_TREE(otherNode, nil);
+    }
+@ If we pushed flow out of this node, and it still has positive
+excess, we must have split.  We just recursively call ourselves to
+try to push again.  This will repeat the search of neighbors, but
+we will be looking to push less excess this time, so the set of
+feasible arcs will different.
+<<recursively push flow out 2>>=
+    if (node.getExcess() > 0) {
+	splittingPathPush(node, remainingSplits);
+    }
+@
 \subsubsection{Staturate All Arcs}
-
+Another simple initialization scheme is to saturate all arcs in
+the graph.  Then we classify each node as strong or weak
+depending on whether it has positive or negative excess.
 <<Solver methods>>=
     void saturateAllArcs();
 <<Solver method implementations>>=
@@ -2273,7 +2322,7 @@ void PhaseSolver::writeStats(ostream& dout)
     int numEmptyScans;
 <<default Solver constructor>>=
     numMergers = numSplits = numEmptyScans = 0;
-@
+@ %def numMergers numSplits numEmptyScans
 To compute the flow amount, we just scan the neighbors of the source
 node and sum the flows on those arcs.  If we were paranoid, we'd also
 scan the sink arcs and compare the amounts.
