@@ -5,6 +5,9 @@
 #include <fstream.h>
 #include <time.h>
 #include <stdlib.h>
+#ifdef NEED_GETOPT
+#include <getopt.h>
+#endif /*NEED_GETOPT*/
 
 extern char* buildFlags;
 
@@ -14,9 +17,10 @@ Boolean checkTree = FALSE;
 void 
 usage()
 {
-    cerr << "Usage: llps [-d] [-f] [-I init] [-N norm] [-B branch] input-graph flow-output" << endl;
+    cerr << "Usage: llps [-d] [-f] [-g freq][-I init] [-N norm] [-B branch] input-graph flow-output" << endl;
     cerr << "\t -d   dump the final disposition of each node" << endl;
     cerr << "\t -f   write the flow values for each arc" << endl;
+    cerr << "\t -g   specify the global relabel frequency" << endl;
     cerr << "\t -t   perform checkTree operations frequently" << endl;
     cerr << "\t -I   initialization function: simple, path, saturate, greedy " << endl;
     cerr << "\t -s   specify the number of splits for path init" << endl;
@@ -38,16 +42,20 @@ main(int argc, char** argv)
     PhaseSolver* solver = new PhaseSolver();
     int numSplits = -1;
     Boolean postOrder = FALSE;
+    float relabelFreq = 0.0;
 
     // parse arguments
     int ch;
-    while ((ch = getopt(argc, argv, "dftI:s:M:N:B:O:")) != EOF) {
+    while ((ch = getopt(argc, argv, "dfg:tI:s:M:N:B:O:")) != EOF) {
 	switch (ch) {
 	case 'd':
 	    dumpNodes = TRUE;
 	    break;
 	case 'f':
 	    writeFlow = TRUE;
+	    break;
+	case 'g':
+	    relabelFreq = atof(optarg);
 	    break;
 	case 't':
 	    checkTree = TRUE;
@@ -161,6 +169,9 @@ main(int argc, char** argv)
 
     if (numSplits >= 0) {
 	solver->maxSplits = numSplits;
+    }
+    if (relabelFreq >= 0.0) {
+	solver->relabelFrequency = relabelFreq;
     }
     solver->postOrderSearch = postOrder;
 
