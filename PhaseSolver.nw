@@ -118,9 +118,10 @@ void PhaseSolver::processBranch(Node& root)
 }
 @ %def processBranch
 Below is recursive code to perform the DFS scan of a node's children and to
-look for merger arcs among its neighbors.  Currently, the code
-processes the nodes in post-order - i.e. the children are all processed
-before the neighbors of this node are scanned.
+look for merger arcs among its neighbors.  The code
+processes the nodes in either post-order (i.e. the children are all processed
+before the neighbors of this node are scanned) or pre-order
+(scan the neighbors first).
 If this function performs a merger, it returns immediately.
 If any part of the sub-tree is split off and strong, it will
 be put in the appropriate bucket where [[getLowestBranch]] will
@@ -132,8 +133,14 @@ The function returns true or false if we perform a merger.
 Boolean PhaseSolver::processSubtree(Node& node)
 {
     NodeLabel label = node.getLabel();
-    <<process all children>>
-    <<look for merger among neighbors>>
+    if (postOrderSearch) {
+	<<process all children>>
+	<<look for merger among neighbors>>
+    } else {
+	<<look for merger among neighbors>>
+	<<process all children>>
+    }
+
     // no merger
     incrementLabel(node);
     node.resetIterations();
@@ -143,6 +150,11 @@ Boolean PhaseSolver::processSubtree(Node& node)
     return FALSE;
 }
 @ %def processSubtree
+<<public Solver data>>=
+    Boolean postOrderSearch;
+<<default Solver constructor>>=
+    postOrderSearch = TRUE;
+@
 We process all children that have the same label as ours, [[label]].
 If a child has a higher label, we just ignore it.  By monotonicity,
 it can't have a label less than ours.  If we process the sub-tree
@@ -1752,7 +1764,7 @@ on the root.
     }
 @
 \subsubsection{Splitting Path Initialization}
-Greedy push with any number of splits allowed.
+Greedy push with an arbitrary number of splits allowed.
 <<Solver methods>>=
     void buildGreedyPathTree();
 <<Solver method implementations>>=
@@ -1768,7 +1780,7 @@ void PhaseSolver::buildGreedyPathTree()
 	if ((node.getExcess() > 0) && 
 	    (node.getLabel() == Node::INITIAL_LABEL))
 	{	
-	    int numSplits = 10;
+	    int numSplits = maxSplits;
 	    splittingPathPush(node, numSplits);
 	}
     }
@@ -1776,6 +1788,11 @@ void PhaseSolver::buildGreedyPathTree()
     setInitialNodeStatus();
 }
 @ %def buildGreedyPathTree
+<<public Solver data>>=
+    int maxSplits;
+@ %def maxSplits
+<<default Solver constructor>>=
+    maxSplits = 10;
 <<Solver methods>>=
     void splittingPathPush(Node& node, int& remainingSplits);
 <<Solver method implementations>>=
@@ -1841,28 +1858,28 @@ If this is the first feasible edge we've seen, it must be the best.
     if (bestOutEdge == nil) {
 	bestOutEdge = &edge;
 	bestEdgeCap = edgeCap;
-	continue;
     } 
 @  We're looking an edge with capacity greater than the excess
 to avoid splits.
 If there are multiple such edges, we'll choose the minimal one - i.e.
 the edge with capacity closest to the excess.
 <<compare edge to best edge>>=
-    if (edgeCap > excess) {
+    else if (edgeCap > excess) {
 	if (bestEdgeCap > edgeCap) {
 	    bestOutEdge = &edge;
+	    bestEdgeCap = edgeCap;
 	} else if (bestEdgeCap < excess) {
 	    bestOutEdge = &edge;
+	    bestEdgeCap = edgeCap;
 	}
     } 
 @ If we can't find an edge with capacity that exceeds the excess, 
 we want to find one that the most capacity.  Again, looking for 
 capacity closest to the excess.
 <<compare edge to best edge>>=
-    else {
-	if (edgeCap > bestEdgeCap) {
-	    bestOutEdge = &edge;
-	}
+    else if (edgeCap > bestEdgeCap) {
+	bestOutEdge = &edge;
+	bestEdgeCap = edgeCap;
     }
 @ When we go to push flow out of [[otherNode]], we want to keep our
 eyes open for reaching all the way to a sink-adjacent node.  If we
@@ -1937,8 +1954,8 @@ void PhaseSolver::convertToFlow()
 <<Solver data>>=
     int currentMark;
 @
-When we initialized the psuedoflow (in [[saturateAllArcs]]), 
-we removed the arc from/to the
+When we initialized the psuedoflow (in [[saturateSourceSinkArcs]]), 
+we removed the arcs from/to the
 source/sink to prevent flow from going back to the source/sink.
 Now, we actaully want to be able to get to the source and sink,
 so we add them back.
@@ -1976,14 +1993,16 @@ void PhaseSolver::pushRootExcess(Node& node)
     while (node.getExcess() != 0) {
 	currentMark++;
 	NodeId cycleNodeId = 0;
-	FlowAmount bottleCap = (seekingSource) ? node.getExcess() : -node.getExcess();
+	FlowAmount bottleCap = (seekingSource) ? 
+	                        node.getExcess() : -node.getExcess();
 
 	SearchStatus status = visitNode(node, node, bottleCap, 
 	                                seekingSource, cycleNodeId);
 	switch (status) {
 	case SOURCE_SINK:
-	    TRACE( trout << "Pushing " << bottleCap << " units of excess from "
-			 << node.getId() << " (" << node.getExcess() << ")" << endl;)
+	    TRACE( trout << "Pushing " << bottleCap 
+	                 << " units of excess from " << node.getId() 
+			 << " (" << node.getExcess() << ")" << endl;)
 	    if (seekingSource) { 
 		node.decrementExcess(bottleCap);
 		assert(node.getExcess() >= 0);
@@ -2008,7 +2027,7 @@ void PhaseSolver::pushRootExcess(Node& node)
 }
 @ %def pushRootExcess
 To dispose of the excess/deficit at a node, we recursively search
-it neighbors looking for the source/sink.  Once we find the source/sink,
+its neighbors looking for the source/sink.  Once we find the source/sink,
 we reduce the flow along the path from the node to the source/sink
 by the amount of the bottleneck capacity along the path.  We ignore
 arcs with zero residual capacity.
@@ -2297,6 +2316,9 @@ void PhaseSolver::writeDimacsFlow(ostream& dout)
     }
 }
 @ %def writeDimacsFlow
+<<header include files>>=
+    class ostream;
+@
 We collect various statistics while the program is running.
 This method prints them into the Dimacs output file as comments.
 <<Solver methods>>=
@@ -2320,9 +2342,10 @@ void PhaseSolver::writeStats(ostream& dout)
     int numMergers;
     int numSplits;
     int numEmptyScans;
+@ %def numMergers numSplits numEmptyScans
 <<default Solver constructor>>=
     numMergers = numSplits = numEmptyScans = 0;
-@ %def numMergers numSplits numEmptyScans
+@
 To compute the flow amount, we just scan the neighbors of the source
 node and sum the flows on those arcs.  If we were paranoid, we'd also
 scan the sink arcs and compare the amounts.
@@ -2342,8 +2365,6 @@ in the graph.  This should be called before converting the pseudoflow
 to a flow.
 <<Solver methods>>=
     void dumpNodes(ostream& out);
-<<header include files>>=
-    class ostream;
 <<Solver method implementations>>=
 void PhaseSolver::dumpNodes(ostream& out)
 {
@@ -2424,7 +2445,6 @@ data, and inline functions.  Again, we have more boiler-plate.
 class PhaseSolver;
 typedef void (PhaseSolver::* AddBranchPtr)(Node& root);
 typedef void (PhaseSolver::* RenormalizePtr)(Node& strongRoot, Node& weakNode);
-typedef void (PhaseSolver::* MergePtr)(Node& strongRoot, Node& weakNode, Edge& edge);
 
 <<Node Bucket definition>>
 
