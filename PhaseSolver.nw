@@ -26,7 +26,7 @@ We also need to know the source and sink nodes in the graph.
     NodePtr 	sinkNode;
 <<default Solver constructor>>=
     sourceNode = sinkNode = nil;
-@ %def sourceNode sinNode
+@ %def sourceNode sinkNode
 
 At the highest level, solving is pretty simple: we select the
 lowest labeled strong branch, process it looking for mergers and 
@@ -654,7 +654,9 @@ Simplex solver.  Here in the base class, we just check the label.
 NodePtr PhaseSolver::getLowestBranch()
 {
     NodePtr result = getLowestBucket();
-    assert(result->getLabel() == lowestLabel);
+    if (result != nil) {
+	assert(result->getLabel() == lowestLabel);
+    }
     return result;
 }
 @ %def getLowestBranch
@@ -1508,16 +1510,23 @@ void PhaseSolver::saturateSourceSinkArcs()
 {
     for (int i = 0 ; i < numEdges; i++) {
 	Edge& edge = edges[i];
-	if (edge.getTail() == sourceNode) {
+	if (edge.getSource() == sourceNode) {
 	    FlowAmount excess = edge.saturate();
-	    Node& srcAdjNode = *edge.getHead();
+	    Node& srcAdjNode = *edge.getDest();
 	    srcAdjNode.removeNeighbor(edge);
 	    srcAdjNode.incrementExcess(excess);
-	} else if (edge.getHead() == sinkNode) {
+	}  else if (edge.getDest() == sourceNode) {
+	    // edge into source never used
+	    edge.getSource()->removeNeighbor(edge);
+	}
+	if (edge.getDest() == sinkNode) {
 	    FlowAmount excess = edge.saturate();
-	    Node& sinkAdjNode = *edge.getTail();
+	    Node& sinkAdjNode = *edge.getSource();
 	    sinkAdjNode.decrementExcess(excess);
 	    sinkAdjNode.removeNeighbor(edge);
+	} else if (edge.getSource() == sinkNode) {
+	    // edge out of sink never used
+	    edge.getDest()->removeNeighbor(edge);
 	}
     }
 }
@@ -1851,6 +1860,202 @@ void PhaseSolver::saturateAllArcs()
     setInitialNodeStatus();
 }
 @ %def saturateAllArcs
+\subsection{Recovering a Feasible Flow}
+<<Solver public declarations>>=
+    void convertToFlow();
+<<Solver method implementations>>=
+void PhaseSolver::convertToFlow()
+{
+    currentMark = 1024;
+    <<replace source and sink arcs>>
+    for (int i = 1; i <= numNodes; i++) {
+	Node& node = nodes[i];
+	if (&node == sourceNode || &node == sinkNode) {
+	    continue;
+	}
+	if (node.getExcess() != 0) {
+	    pushRootExcess(node);
+	}
+    }
+}
+@ %def convertToFlow
+<<Solver data>>=
+    int currentMark;
+@
+When we initialized the psuedoflow (in [[saturateAllArcs]]), 
+we removed the arc from/to the
+source/sink to prevent flow from going back to the source/sink.
+Now, we actaully want to be able to get to the source and sink,
+so we add them back.
+<<replace source and sink arcs>>=
+    for (int i = 0 ; i < numEdges; i++) {
+	Edge& edge = edges[i];
+	if (edge.getSource() == sourceNode) {
+	    Node& srcAdjNode = *edge.getDest();
+	    srcAdjNode.addNeighbor(edge);
+	} 
+	if (edge.getDest() == sinkNode) {
+	    Node& sinkAdjNode = *edge.getSource();
+	    sinkAdjNode.addNeighbor(edge);
+	}
+    }
+@ 
+As we search for the source or sink, there are a number of possible
+outcomes for a given search.  Obviously, we can either find or 
+not find the source/sink.  If we encounter a cycle, an edge could
+be part of the cycle or it could be on the path leading to the
+cycle.  Let's introduce an enumeration for the possibilites.  
+<<Solver public declarations>>=
+    typedef enum SearchStatus {
+	NOT_FOUND,
+	SOURCE_SINK,
+	IN_CYCLE,
+	OUT_CYCLE
+    } SearchStatus;
+<<Solver public declarations>>=
+    void pushRootExcess(Node& node);
+<<Solver method implementations>>=
+void PhaseSolver::pushRootExcess(Node& node)
+{
+    Boolean seekingSource = (node.getExcess() > 0) ? TRUE : FALSE;
+    while (node.getExcess() != 0) {
+	currentMark++;
+	NodeId cycleNodeId = 0;
+	FlowAmount bottleCap = (seekingSource) ? node.getExcess() : -node.getExcess();
+
+	SearchStatus status = visitNode(node, node, bottleCap, 
+	                                seekingSource, cycleNodeId);
+	switch (status) {
+	case SOURCE_SINK:
+	    TRACE( trout << "Pushing " << bottleCap << " units of excess from "
+			 << node.getId() << " (" << node.getExcess() << ")" << endl;)
+	    if (seekingSource) { 
+		node.decrementExcess(bottleCap);
+		assert(node.getExcess() >= 0);
+	    } else {
+		node.incrementExcess(bottleCap);
+		assert(node.getExcess() <= 0);
+	    }
+	    break;
+	case OUT_CYCLE:
+	    // nothing to do - try again
+	    break;
+	case IN_CYCLE:
+	    assert("A strong root shouldn't be in a cycle");
+	case NOT_FOUND:
+	    assert("There must be a path to the source/sink");
+	}
+
+	if (node.getExcess() != 0) {
+	    assert(node.hasMoreNeighbors());
+	}
+    }
+}
+@ %def pushRootExcess
+To dispose of the excess/deficit at a node, we recursively search
+it neighbors looking for the source/sink.  Once we find the source/sink,
+we reduce the flow along the path from the node to the source/sink
+by the amount of the bottleneck capacity along the path.  We ignore
+arcs with zero residual capacity.
+
+The other possible outcome of our search is that we find a cycle.
+In this case we want to reduce the flow of all arcs along the cycle.
+Once we've backed out flow along the cycle, we want to return
+back to the strong/weak root to resume the search.
+<<Solver public declarations>>=
+    SearchStatus visitNode(Node& node, Node& prevNode, FlowAmount& bottleCap, 
+    		  Boolean seekingSource, NodeId& cycleNodeId);
+<<Solver method implementations>>=
+PhaseSolver::SearchStatus 
+PhaseSolver::visitNode(Node& node, Node& prevNode, FlowAmount& bottleCap, 
+                       Boolean seekingSource, NodeId& cycleNodeId)
+{
+    <<check for terminating recursion>>
+    SearchStatus result = NOT_FOUND;
+    node.flag = currentMark;
+
+    node.resetIterations();
+    while (node.hasMoreNeighbors()) {
+	Edge& neighborEdge = node.getCurrentNeighbor();
+	Node& neighbor = *neighborEdge.getOtherNode(&node);
+	FlowAmount residCap = neighborEdge.residCapacity(
+				    seekingSource ? node : neighbor);
+	if ((&neighbor != &prevNode) && (residCap > 0)) {
+	    <<visit neighbor node>>
+	}
+	node.advanceNeighbors();
+    }
+
+    return result;
+}
+@ %def visitNode
+We terminate the recursion when we find a cycle or the source/sink.
+For a cycle, we signal the cycle by setting [[cycleNodeId]] to the
+current node.  This also serves to mark the begining of the cycle,
+so that we know how far to back out the recursion.  If we simply found
+the source/sink, we just return.  For all of these cases, we could
+have eliminated the tail recursion by checking for it before
+visiting the node (in the [[while]] loop), but this seems simpler.
+<<check for terminating recursion>>=
+    if (node.flag == currentMark) {
+	assert(cycleNodeId == 0);
+	cycleNodeId = node.getId();
+	return IN_CYCLE;
+    } else if (&node == sourceNode) {
+	return (seekingSource) ? SOURCE_SINK : NOT_FOUND;
+    } else if (&node == sinkNode) {
+	return (seekingSource) ? NOT_FOUND : SOURCE_SINK;
+    }
+@
+To visit a node, we compute a new, tentative bottleneck capacity, but
+we do not assign it to the bottleneck parameter (which is passed by
+reference) until we find the source/sink (or cycle).  After visiting
+the node (and its neighbors), if we found something, we will
+reduce the flow on the arc.  If we found the first node in a cycle,
+we clear the [[cycleNodeId]] to ignore the cycle and continue
+searching.  Otherwise, we want to break a the search and return
+to the calling function.
+<<visit neighbor node>>=
+    FlowAmount newBottleCap = (bottleCap < residCap) ? bottleCap : residCap;
+    SearchStatus status = visitNode(neighbor, node, newBottleCap, 
+                                    seekingSource, cycleNodeId);
+    // see if we found source/sink or a cycle
+    if (status != NOT_FOUND) {
+	bottleCap = newBottleCap;
+	reduceFlow(node, neighbor, neighborEdge, bottleCap, seekingSource);
+	if (cycleNodeId == node.getId()) {
+	    // we're back to the begining of the cycle
+	    assert(status == IN_CYCLE);
+	    cycleNodeId = 0;
+	    status = OUT_CYCLE;
+	} 
+	result = status;
+	break;		// stop checking neighbors
+    }
+@ 
+When we reduce the flow on an edge, if the edge becomes saturated,
+we need to remove it from the appropriate node.  Currently, this
+code is `unidirectional' (i.e. we ignore the orientation of the arc),
+so we express everything in terms of the from/to direction we
+are moving flow along.
+<<Solver public declarations>>=
+    void reduceFlow(Node& from, Node& to, Edge& edge, 
+		    FlowAmount amt, Boolean positiveExcess);
+<<Solver method implementations>>=
+void PhaseSolver::reduceFlow(Node& from, Node& to, Edge& edge, 
+			     FlowAmount amt, Boolean positiveExcess)
+{
+    edge.decreaseFlow(from, (positiveExcess ? amt : -amt));
+
+    if (edge.residCapacity(from) == 0) {
+	TRACE(trout << "Removing " << edge << " from " << from.getId() << endl);
+	from.removeNeighbor(edge);
+    } else if (edge.residCapacity(to) == 0) {
+	TRACE(trout << "Removing " << edge << " from " << to.getId() << endl);
+	to.removeNeighbor(edge);
+    }
+}
+@ %def reduceFlow
 \subsection{Input Output Functions}
 We need routines to read Dimacs problem files and write 
 Dimacs flow files.  At the moment, these are member
@@ -2014,8 +2219,8 @@ we only scan the edges that we actually read (based on [[nextEdge]])
 rather than the number we could have seen (specified by [[numEdges]]).
 <<initialize nodes>>=
     for (int i = 0; i < nextEdge; i++) {
-	edges[i].getHead()->addNeighbor(edges[i]);
-	edges[i].getTail()->addNeighbor(edges[i]);
+	edges[i].getHead()->appendNeighbor(edges[i]);
+	edges[i].getTail()->appendNeighbor(edges[i]);
     }
 @
 Finally, let's remember to free up the memory we allocated to count
@@ -2034,7 +2239,7 @@ total flow amount and the flow on each arc.
 void PhaseSolver::writeDimacsFlow(ostream& dout)
 {
     <<write header>>
-    dout << "s " << 0 << endl;
+    <<write flow amount>>
     <<dump arcs>>
 }
 @ %def writeDimacsFlow
@@ -2043,6 +2248,17 @@ void PhaseSolver::writeDimacsFlow(ostream& dout)
     dout << "c  numNodes: " << numNodes << endl;
     dout << "c  numArcs: "  << numEdges << endl;
     dout << "c" << endl;
+@
+<<write flow amount>>=
+    int flowAmt = 0;
+    for (sourceNode->resetIterations(); 
+	 sourceNode->hasMoreNeighbors();
+	 sourceNode->advanceNeighbors())
+    {
+	Edge& edge = sourceNode->getCurrentNeighbor();
+	flowAmt += edge.getFlow();
+    }
+    dout << "s " << flowAmt << endl;
 @
 To dump the edges, we just iterate over the array of edges and 
 print them out.
@@ -2143,6 +2359,7 @@ typedef void (PhaseSolver::* MergePtr)(Node& strongRoot, Node& weakNode, Edge& e
 class PhaseSolver 
 {
 public:
+    <<Solver public declarations>>
     <<Solver methods>>
     <<C++ overhead>>
     <<public Solver data>>
