@@ -46,11 +46,14 @@ us to search from the root down the tree.
 We can nodes add to these lists.  Adding a neighbor simply adds
 it to the neighbor list.  
 <<Node methods>>=
+    void appendNeighbor(Edge& edge);
     void addNeighbor(Edge& edge);
 <<Node method implementations>>=
-void Node::addNeighbor(Edge& edge)
+void Node::appendNeighbor(Edge& edge)
 { neighbors.appendEdge(&edge); }
-@ %def addNeighbor
+void Node::addNeighbor(Edge& edge)
+{ neighbors.addHoleElement(&edge); }
+@ %def appendNeighbor addNeighbor
 During initialization, we remove arc from/to source- and sink-
 adjacent nodes so that we don't scan them and try to push flow back along
 these arcs.
