@@ -12,5 +12,8 @@ typedef int  FlowAmount;
 typedef FlowAmount NodeExcess;
 
 class Node;
+typedef Node* NodePtr;
 class Edge;
+typedef Edge* EdgePtr;
+
 #endif /*TYPES_H*/

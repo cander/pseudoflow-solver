@@ -1,10 +1,58 @@
 \subsection{Edges}
-<<Edge methods>>=
+We allocate an Edge object for each edge in the graph.  Edges store
+the current flow and the maximum capacity between source and
+destination Nodes.  
 <<Edge data>>=
-<<Edge method implementations>>=
+    FlowAmount	capacity;
+    FlowAmount	flow;
+    Node*	source;
+    Node*	dest;
+@ %def capacity flow source dest
+For the purposes of the algorithm, an edge has an orientation that
+idicates which direction we are pushing additional flow - i.e.
+from child towards parent.  This allows us to define the residual
+capacity with respect to the current orientation.
+<<Edge data>>=
+    Boolean	isForward;
+@ %def isForward
+<<Edge methods>>=
+public:
+    FlowAmount residCapacity() const;
 <<Edge inline implementations>>=
+INLINE FlowAmount Edge::residCapacity() const
+{ 
+    if (isForward) {
+	return capacity - flow;
+    } else {
+	return capacity;
+    }
+}
+@ %def residCapacity
+We can set the orientation in two ways: we can toggle or reverse it,
+or we can set the orientation such that the forward direction points
+towards either of the endpoints.
+<<Edge methods>>=
+    void toggleOrientation();
+    void setDirectionTo(NodePtr endpoint);
+<<Edge inline implementations>>=
+INLINE void Edge::toggleOrientation()
+{ isForward = isForward ? FALSE : TRUE; }
+INLINE void Edge::setDirectionTo(NodePtr endpoint)
+{
+    assert(endpoint == source || endpoint == dest);
+    isForward = (endpoint == dest) ? TRUE : FALSE;
+}
+@ %toggleOrientation setDirection
+Regardless of the orientation of the node, given one endpoint we
+want to be able to get the other node.
+<<Edge methods>>=
+    NodePtr getOtherNode(const NodePtr node) const;
+<<Edge inline implementations>>=
+INLINE NodePtr Edge::getOtherNode(const NodePtr node) const
+{ return (node == source) ? dest : source; }
+@ %def getOtherNode
+<<Edge method implementations>>=
 <<Edge header include files>>=
-<<debugging functions>>=
 <<C++ overhead>>=
 @
 \subsubsection{File Boiler Plate}
@@ -40,8 +88,8 @@ data, and inline functions.  Again, we have more boiler-plate.
 
 class Edge 
 {
+public:
     <<Edge methods>>
-    <<debugging functions>>
     <<C++ overhead>>
 private:
     <<Edge data>>

@@ -11,6 +11,8 @@ number, which remains constant during the execution of the algorithm.
     NodeLabel	label;
 <<header include files>>=
 #include "types.h"
+<<default Node constructor>>=
+    id = -1;  label = -1;
 @
 As the algorithm progesses, the we check the label and increment it
 by one.
@@ -23,7 +25,7 @@ INLINE NodeLabel Node::getLabel() const
 { return label; }
 INLINE void Node::incrementLabel()
 { label++; }
-@
+@ %def getLabel incrementLabel
 A node can also have excess flow associated with it.  Typically,
 this only occurs at a node that is adjacent to the pseduo-root
 of the tree.  In our implementation, we store excess on nodes
@@ -31,7 +33,9 @@ in the middle of the tree temporarily while we are pushing it towards
 the pseudo-root.
 <<Node data>>=
     NodeExcess	excess;
-@
+<<default Node constructor>>=
+    excess = 0;
+@ %def excess
 Of course, then we need methods to manipulate the excess.
 <<Node methods>>=
     NodeExcess getExcess() const;
@@ -44,11 +48,91 @@ INLINE void Node::decrementExcess(NodeExcess delta)
 { excess -= delta; }
 INLINE void Node::setExcess(NodeExcess newExcess)
 { excess = newExcess; }
+@ %def getExcess decrementExcess setExcess
+To represent the graph, each node needs to store an list of neighbors.
+To represent the tree, each node has list of children, which allows
+us to search from the root down the tree.  
+<<Node data>>=
+    NodeList	neighbors;
+    NodeList	children;
+<<header include files>>=
+#include "NodeList.h"
+@ %def neighbors children
+We can nodes add to these lists.  Adding a neighbor simply adds
+it to the neighbor list.  
+<<Node methods>>=
+    void addNeighbor(NodePtr nodep);
+<<Node method implementations>>=
+void Node::addNeighbor(NodePtr nodep)
+{ neighbors.appendNode(nodep); }
+@ %def addNeighbor
+In order to scan from a node back up to the root, each node needs
+to have a pointer to its parent.  During push operations, we also
+need to know the residual capacity of the edge between the parent
+and child, so we do not simply store a pointer to the parent,
+rather we keep a pointer to the edge between the parent and
+child, which seems a little indirect.
+<<Node data>>=
+    EdgePtr	parentEdge;
+<<default Node constructor>>=
+    parentEdge = nil;
+<<header include files>>=
+#include "Edge.h"
+@ %def parentEdge
+We can define some accessor methods to use the parent edge.
+The parent edge is [[nil]] if the node is a root.
+<<Node methods>>=
+    EdgePtr	getParentEdge() const;
+    NodePtr	getParentNode();
+<<Node inline implementations>>=
+INLINE EdgePtr Node::getParentEdge() const
+{ return parentEdge; }
+INLINE NodePtr Node::getParentNode() 
+{ return (parentEdge != nil) ? parentEdge->getOtherNode(this) : nil; }
+@ %def getParentEdge getParentNode
+Adding a child is a more involved process than adding a neighbor
+because we have to update the parent edge.  We begin by adding
+the child to the parent's list of children.  
+Then, we update the orientation of the 
+orientation of the edge to point from child to parent.
+And finally, we update set the child's parent edge.
+<<Node methods>>=
+    void addChild(NodePtr child, Edge& edge);
+<<Node method implementations>>=
+void Node::addChild(NodePtr child, Edge& edge)
+{
+    children.appendNode(child);
+    edge.setDirectionTo(this);
+    child->parentEdge = &edge;
+}
 
 
 <<Node method implementations>>=
 <<debugging functions>>=
+@
+We need a default constructor because we will be creating an
+array of nodes in bulk when we know how many of them are
+in the graph.
 <<C++ overhead>>=
+    Node();
+<<Node method implementations>>=
+Node::Node()
+{
+    <<default Node constructor>>
+}
+@
+After constructing a node, we will need to initialize it.  By the time
+we initialize it, we need to know the number of neighbors so we
+can allocate the neighbor and children arrays.
+<<Node methods>>=
+    void init(NodeId id, int numNeighbors);
+<<Node method implementations>>=
+void Node::init(NodeId id, int numNeighbors)
+{
+    this->id = id;
+    neighbors.init(numNeighbors);
+    children.init(numNeighbors + 3);
+}
 
 @
 \subsubsection{File Boiler Plate}
