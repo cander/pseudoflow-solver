@@ -12,12 +12,12 @@ usage()
     cerr << "Usage: llps [-d] [-f] [-I init] [-N norm] [-B branch] input-graph flow-output" << endl;
     cerr << "\t -d   dump the final disposition of each node" << endl;
     cerr << "\t -f   write the flow values for each arc" << endl;
-    cerr << "\t -I   specify initialization function" << endl;
+    cerr << "\t -I   initialization function: simple, path, saturate, greedy " << endl;
     cerr << "\t -s   specify the number of splits for path init" << endl;
-    cerr << "\t -B   specify strong bucket management" << endl;
-    cerr << "\t -M   specify merger function" << endl;
-    cerr << "\t -N   specify normalization method" << endl;
-    cerr << "\t -O   specify pre or post order searches" << endl;
+    cerr << "\t -B   strong bucket management: fifo, lifo, wave" << endl;
+    cerr << "\t -M   merger function: pseudo, simplex" << endl;
+    cerr << "\t -N   normalization method: immed, delayed" << endl;
+    cerr << "\t -O   search order: pre, post" << endl;
 }
 
 int 
@@ -66,7 +66,7 @@ main(int argc, char** argv)
 	case 'M':
 	    if (strcmp(optarg, "simplex") == 0) {
 		solver = new SimplexSolver();
-	    } else if (strcmp(optarg, "pseduo") == 0) {
+	    } else if (strcmp(optarg, "pseudo") == 0) {
 		solver = new PhaseSolver();
 	    } else {
 		cerr << "Invalid merge function option " << optarg << endl;
