@@ -175,9 +175,9 @@ branches with labels less than $\ell$ are the only ones that
 will interrupt phase $\ell$, we are only concerned about such
 splits within the weak branch.
 <<Solver methods>>=
-    NodeLabel merge(Node& strong, Node& weak, Edge& edge);
+    void merge(Node& strong, Node& weak, Edge& edge);
 <<Solver method implementations>>=
-NodeLabel PhaseSolver::merge(Node& strong, Node& weak, Edge& edge)
+void PhaseSolver::merge(Node& strong, Node& weak, Edge& edge)
 {
     TRACE( trout << "merge " << strong.getId() << " ("
 		   << strong.getRootExcess() << ") to " 
@@ -189,9 +189,7 @@ NodeLabel PhaseSolver::merge(Node& strong, Node& weak, Edge& edge)
     CHECK_TREE(weak, weak.getParentEdge());
     CHECK_TREE(*weak.getRoot(), nil);
     strongPush(strongRoot, weak);
-    NodeLabel splitLabel = weakPush(weak);
-
-    return splitLabel;
+    weakPush(weak);
 }
 @ %def merge
 Push excess from the former strong root, $r_s$ to the strong node, $s$,
@@ -223,11 +221,10 @@ to push all of the flow, but it differs in that we push all the way
 to the root of the branch, and we want to keep track of the lowest
 labeled node that we split off.
 <<Solver methods>>=
-    NodeLabel weakPush(Node& src);
+    void weakPush(Node& src);
 <<Solver method implementations>>=
-NodeLabel PhaseSolver::weakPush(Node& src)
+void PhaseSolver::weakPush(Node& src)
 {
-    NodeLabel splitLabel = MAX_LABEL;
     NodePtr currNode = &src;
     while (currNode->getParentNode() != nil) {
 	NodePtr parent = currNode->getParentNode();
@@ -236,7 +233,6 @@ NodeLabel PhaseSolver::weakPush(Node& src)
 	    CHECK_TREE(*currNode, nil);
 	    if (currNode->getExcess() > 0) {	// ZERO_DEFICT
 		addStrongBranch(*currNode);
-		splitLabel = currNode->getLabel();
 	    } // else - just a split, zero-deficit node?
 	}
 	currNode = parent;
@@ -246,8 +242,6 @@ NodeLabel PhaseSolver::weakPush(Node& src)
     if (currNode->getExcess() > 0) {	// ZERO_DEFICT
 	addStrongBranch(*currNode);
     }
-
-    return splitLabel;
 }
 @ %def weakPush
 \subsection{Managing Strong Branches}
