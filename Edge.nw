@@ -190,11 +190,11 @@ We also need to initialize parameteric arcs where the capacity
 is defined by two parameters, $a$ and $b$.
 <<Edge methods>>=
 #ifdef PARAM_SENSE
-    void init(Node& src, Node& dst, FlowAmount aParam, float bParam);
+    void init(Node& src, Node& dst, FlowAmount aParam, double bParam);
 #endif PARAM_SENSE
 <<Edge method implementations>>=
 #ifdef PARAM_SENSE
-void Edge::init(Node& src, Node& dst, FlowAmount _aParam, float _bParam)
+void Edge::init(Node& src, Node& dst, FlowAmount _aParam, double _bParam)
 {
     source = &src;
     dest = &dst;
@@ -232,7 +232,7 @@ than a sub-class.
 <<Edge data>>=
 #ifdef PARAM_SENSE
     FlowAmount aParam;
-    float      bParam;
+    double      bParam;
 #endif PARAM_SENSE
 @
 Given a new value for $\lambda$, we compute the new capacity and return
@@ -246,15 +246,15 @@ formulation).  Note that once $b \lambda$ exceeds $a$, the capacity will
 increase even though it is still adjacent to the sink.  This doesn't
 seem to be a problem.
 <<Edge methods>>=
-    FlowAmount increaseLambda(float newLabmda);
+    FlowAmount increaseLambda(double newLabmda);
 <<Edge method implementations>>=
-FlowAmount Edge::increaseLambda(float newLambda)
+FlowAmount Edge::increaseLambda(double newLambda)
 {
     FlowAmount oldCapacity = capacity;
 #ifdef PARAM_SENSE
-    capacity = (FlowAmount)rintf(fabs(aParam + bParam * newLambda));
+    capacity = (FlowAmount)fabs(aParam + bParam * newLambda);
     // assume we always want the arc saturated
-    //flow = capacity;
+    //flow = capacity;	- XXX???
 #endif PARAM_SENSE
 
     return capacity - oldCapacity;
@@ -292,12 +292,25 @@ method.
 <<Edge method implementations>>=
 ostream& Edge::writeFlow(ostream& out)
 { 
-    return out << "f     " 
-	       << setw(8) << source->getId() << " "
-	       << setw(8) << dest->getId() << " "
-	       << setw(8) << flow;
+    return out << "f " 
+	       << setw(6) << source->getId() << " "
+	       << setw(6) << dest->getId() << " "
+	       << setw(6) << flow;
 }
 @ %def writeFlow
+Here is a simple method that writes the arc out in Dimacs problem instance
+format (i.e. .max format) with the source, destination and capacity.
+<<Edge methods>>=
+    ostream& writeArcInstance(ostream& out);
+<<Edge method implementations>>=
+ostream& Edge::writeArcInstance(ostream& out)
+{ 
+    return out << "a  " 
+	       << setw(6) << source->getId() << " "
+	       << setw(6) << dest->getId() << " "
+	       << setw(6) << capacity;
+}
+@ %def writeArcInstance
 Here's another debugging function that just validates that a given
 edge is in fact and edge between two specified nodes.  We don't care
 which is the source or destination.  If the edge or nodes are not 
