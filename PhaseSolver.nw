@@ -59,7 +59,6 @@ void PhaseSolver::solve(AddBranchPtr addFunc)
 	)
 	<<terminate early based on counting labels>>
 	Boolean performedMerger = processBranch(*strongBranch);
-	STATS(performedMerger ? 0 : numEmptyBranchScans++ );
 	checkForRelabel();
 	strongBranch = getLowestBranch();
     }
@@ -149,6 +148,7 @@ Boolean PhaseSolver::processBranch(Node& root)
     } else {
 	performedMerger = processSubtree(root);
 	if (!performedMerger) {
+	    numEmptyBranchScans++;
 	    addStrongBranch(root);	// XXX maybe this should be in solve
 	}
     }
