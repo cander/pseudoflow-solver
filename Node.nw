@@ -192,6 +192,24 @@ iterations on both the children and the neighbors.
 INLINE void Node::resetIterations()
 { children.beginIteration(); neighbors.beginIteration(); }
 @ %def resetIterations
+We have a newer way of iterating over the neighbors and children
+of a node that uses a read-only iterator.  This allows us to scan
+the neighbors/children without updating the current neighbor pointer.
+<<Node methods>>=
+    ElIterator	getNeighbors();
+    ElIterator	getChildren();
+<<Node inline implementations>>=
+INLINE ElIterator Node::getNeighbors()
+{
+    ElIterator it(neighbors);
+    return it;		// lame object copy during return
+}
+INLINE ElIterator Node::getChildren()
+{
+    ElIterator it(children);
+    return it;		// lame object copy during return
+}
+@ %def getNeighbors getChildren
 The opposite of adding a child is spliting off a sub-tree by removing
 a node from its parent.  This is quite straightforward: remove the
 parent edge of the node from its parent's list of children, and 
@@ -475,7 +493,7 @@ public:
     void clearFlag(int f) { flag &= ~f; }
     Boolean flagIsSet(int f) { return (flag & f) ? TRUE : FALSE; }
     void clearFlagPath(int f, NodePtr end);
-@
+@ %def flag setFlag clearFlag flagIsSet
 This function clear a flag value along a path of parent pointers.
 <<Node inline implementations>>=
 INLINE void Node::clearFlagPath(int f, NodePtr end)
@@ -490,7 +508,12 @@ INLINE void Node::clearFlagPath(int f, NodePtr end)
 	end->clearFlag(f);
     }
 }
-@ clearFlagPath
+@ %def clearFlagPath
+<<Node data>>=
+    int distance;
+<<default Node constructor>>=
+    distance = 0;
+@ %def distance
 \subsection{Debugging}
 To aid in debugging the tree and graph manipulation functions,
 we have some functions that we can use to print and check the
