@@ -59,7 +59,7 @@ operator<<(ostream& out, const Timer& timer)
     float wall, user, sys;
     timer.getTimes(wall, user, sys);
     out << "[" << wall << " wall, " 
-	<< user << ", user "
+	<< user << " user, "
 	<< sys << " sys]";
     return out;
 }
