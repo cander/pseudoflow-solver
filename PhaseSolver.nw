@@ -76,6 +76,9 @@ execution.
 <<terminate early based on counting labels>>=
 #ifdef TERM_LABELS
 	if ((labelCount[strongLabel - 1] == 0) && 
+#ifdef DSHHACK
+(strongLabel > maxInitialLabel)  &&		// TTT dsh hack
+#endif
 	    (strongLabel > INIT_WEAK_LABEL))
 	{
 	    Boolean earlyTerm = FALSE;
@@ -83,6 +86,16 @@ execution.
 		<<perform last global relabel>>
 	    } else {
 		earlyTerm = TRUE;
+/*
+// XXX hack to ignore early termination because we're not doing global relabels
+int minTestLabel = max(strongLabel-15, 0);
+for (int i = strongLabel - 1; i > minTestLabel ; i--) {
+    if (labelCount[i] > 0) {
+	earlyTerm = FALSE;
+	break;
+    }
+}
+*/
 	    }
 
 	    if (earlyTerm) {
@@ -100,7 +113,7 @@ operation should prune out all of the strong nodes because they will no
 longer be able to reach the sink.  In this case, [[getLowestBranch]] should
 return null.
 <<perform last global relabel>>=
-    addStrongBranch(*strongBranch);	// should addHead
+    addBranchFifo(*strongBranch);
 cout << "Performing final global relabel at phase " << strongLabel 
      << " with " << numRemovedNodes << " nodes pruned from the graph" << endl;
     globalRelabel();
@@ -250,10 +263,12 @@ two in the number of mergers.
 }
 <<look for merger among neighbors>>=
     if (node.distance <= label) {
+//	int dist = node.distance;
 	while (node.hasMoreNeighbors()) {
 	    Edge& neighborEdge = node.getCurrentNeighbor();
 	    Node& neighbor = *neighborEdge.getOtherNode(&node);
 	    if ((neighbor.getLabel() < label) &&
+//		(neighbor.distance < dist) &&
 		(neighborEdge.residCapacity(node) > 0))
 	    {
 		TRACE(if (neighbor.getLabel() < (label - 1)) 
@@ -700,6 +715,7 @@ label, and inserting it into the list.
 void PhaseSolver::addStrongBranch(Node& root)
 {
     assert((root.getParentNode() == nil) && (root.getExcess() >= 0));
+    assert(root.getLabel() < numNodes);
     CHECK_TREE(root, nil);
     NodeLabel label = root.getLabel();
 
@@ -753,7 +769,7 @@ INLINE void PhaseSolver::checkLowestLabel(NodeLabel label)
 <<Solver protected memebers>>=
     AddBranchPtr addBranchFunc;
 <<default Solver constructor>>=
-    addBranchFunc = &PhaseSolver::addBranchLifo;
+    addBranchFunc = &PhaseSolver::addBranchFifo;
 @ %def addBranchFunc
 <<Solver methods>>=
     void addBranchFifo(Node& root);
@@ -1665,6 +1681,7 @@ void PhaseSolver::buildSimpleTree()
 {
     saturateSourceSinkArcs();
     setInitialNodeStatus();
+    globalRelabel();		// TTT -temp hack
 }
 @ %def buildSimpleTree
 The code to saturate the source- and sink-adjacent arcs is
@@ -2127,7 +2144,16 @@ void PhaseSolver::saturateAllArcs()
 	}
     }
 
+#ifdef DSHHACK
+    setSinkDistLabels();		// TTT - DSH hack
+#else /* !DSHHACK*/
+  #ifdef MYHACK
+    //globalRelabel();			// TTT - my hack
+    setInitialDistLabels(FALSE);
+  #else /* !MYHACK && !DSHHACK*/
     setInitialNodeStatus();
+  #endif /*MYHACK*/
+#endif /* DSHHACK*/
 }
 @ %def saturateAllArcs
 \subsection{Distance Labeling}
@@ -2240,6 +2266,7 @@ branch.
 <<Solver method implementations>>=
 void PhaseSolver::setSpInitialNodeStatus()
 {
+maxInitialLabel = 0;		// XXX dsh hack
     for (int i = 1; i <= numNodes; i++) {
 	Node& node = nodes[i];
 	if (node.getExcess() > 0) {
@@ -2252,8 +2279,13 @@ void PhaseSolver::setSpInitialNodeStatus()
 	}
 	labelCount[node.getLabel()]++;
 	node.resetIterations();
+if (node.getLabel() > maxInitialLabel) maxInitialLabel = node.getLabel();
     }
 }
+<<Solver data>>=
+    int maxInitialLabel;		// XXX dsh hack
+<<default Solver constructor>>=
+    maxInitialLabel = 0;
 @ %def setSpInitialNodeStatus
 For a strong node, we iterate over its neighbors looking for nodes with
 non-positive excess and find the minimum label.  
@@ -2345,6 +2377,7 @@ INLINE void PhaseSolver::initGlobalRelabel()
 {
     if (relabelFrequency > 0.0) {
 	relabelCounter = (int)(numNodes * relabelFrequency);
+	//relabelCounter = numNodes;
     } else {
 	relabelCounter = MAXINT;
     }
@@ -2551,6 +2584,156 @@ INLINE void PhaseSolver::increaseNodeLabel(Node& node)
     }
 }
 @ %def increaseNodeLabel
+
+<<Solver methods>>=
+    void setSinkDistLabels();
+<<Solver method implementations>>=
+void PhaseSolver::setSinkDistLabels()
+{
+    resetQ();
+    <<initialize distances>>
+    <<load the bfs queue with sink-adj nodes>>
+    <<perform bfs distance labeling in orig graph>>
+    setSpInitialNodeStatus();	
+
+    IFDEBUG( checkBranches(); );
+}
+@ %def setSinkDistLabels
+First, we need to set all the labels to infinity.
+<<initialize distances>>=
+    for (int i = 1; i <= numNodes; i++) {
+	nodes[i].distance = MAXINT;
+	nodes[i].setLabel(INIT_WEAK_LABEL);
+    }
+<<load the bfs queue with sink-adj nodes>>=
+    for(sinkNode->resetIterations();
+        sinkNode->hasMoreNeighbors();
+	sinkNode->advanceNeighbors())
+    {
+	Edge& edge = sinkNode->getCurrentNeighbor();
+	Node& edgeSource = *edge.getSource();
+	Node& edgeDest = *edge.getDest();
+	if ((&edgeSource != sourceNode) && (&edgeDest == sinkNode))
+
+	{
+	    edgeSource.distance = 1;
+	    edgeSource.setLabel(1);
+	    putNodeQ(edgeSource);
+	}
+    }
+<<perform bfs distance labeling in orig graph>>=
+    for (NodePtr nodep = getNextNodeQ(); nodep != nil; nodep = getNextNodeQ()) {
+	int dist = nodep->distance + 1;
+	ElIterator it = nodep->getNeighbors();
+	for (EdgePtr edgep = it.getNext(); edgep != nil; edgep = it.getNext()) {
+	    <<set neighbor distance as needed>>
+	}
+    }
+<<set neighbor distance as needed>>=
+    Node& neighbor = *edgep->getOtherNode(nodep);
+    if ((&neighbor != sourceNode) && (&neighbor != sinkNode) &&
+	(edgep->getDest() == nodep) &&		// want an 'in' arc
+	(neighbor.distance > dist))
+    {
+	    neighbor.distance = dist;
+	    neighbor.setLabel(dist);
+	    putNodeQ(neighbor);
+    }
+
+@
+This function sets distance labels to the nearest negative deficit node,
+and it sets the node labels to the highest value possible while still
+observing monotonicity.  Then, it puts the strong nodes in buckets.
+<<Solver methods>>=
+    void setInitialDistLabels(Boolean sinkAdjOnly);
+<<Solver method implementations>>=
+void PhaseSolver::setInitialDistLabels(Boolean sinkAdjOnly)
+{
+    resetQ();
+    <<initialize distances and load queue>>
+    <<perform bfs distance labeling>>
+    <<scan nodes and put in buckets>>
+
+    IFDEBUG( checkBranches(); );
+}
+@ %def setInitialDistLabels
+We establish initial distances and labels.  All nodes get an initial label
+of one (INIT_WEAK_LABEL).  Deficit nodes get a distance of one, and they
+get inserted into the BFS queue.  All other nodes get an infinite distance.
+<<initialize distances and load queue>>=
+    for (int i = 1; i <= numNodes; i++) {
+	Node& node = nodes[i];
+	node.setLabel(INIT_WEAK_LABEL);
+	if (node.getExcess() < 0) {
+	    node.distance = 1;
+	    putNodeQ(node);
+	} else {
+	    node.distance = MAXINT;
+	}
+    }
+<<initialize distances and load queue>>=
+    // maybe I should scan the sink-adj nodes looking for
+    // zero-defiict nodes
+
+@ The BFS is simple: pull a node out of the queue and scan its neighbors.
+Continue until there are no nodes in the queue.
+<<perform bfs distance labeling>>=
+    for (NodePtr nodep = getNextNodeQ(); nodep != nil; nodep = getNextNodeQ()) {
+	int dist = nodep->distance + 1;
+	ElIterator it = nodep->getNeighbors();
+	for (EdgePtr edgep = it.getNext(); edgep != nil; edgep = it.getNext()) {
+	    <<set zero-deficit neighbor distance as needed>>
+	}
+    }
+@ When we scan a node, we are looking for neighbors 
+that can reach us in the residual graph - i.e. positive residual capacity
+from the neighbor to us.  We are only interested in neighbors
+with a distance greater than one more than our distance (due to BFS, 
+the distance should always be infinity).   If we find such a node,
+we set its distance and label, and put it at the end of the queue
+for subsequence processing.
+<<set zero-deficit neighbor distance as needed>>=
+    Node& neighbor = *edgep->getOtherNode(nodep);
+    if ((neighbor.distance > dist) && (edgep->residCapacity(neighbor) > 0))
+    {
+	    neighbor.distance = dist;
+	    neighbor.setLabel(dist);
+	    putNodeQ(neighbor);
+    }
+@ After we have performed the BFS, the labels are all initialized to
+either their distance or the default value of one, and the distances
+reflect the distance to a deficit node, which may still be infinity.
+For simplicity, let's assume that this code is only called by
+[[saturateAll]] so we have no branch structure to worry about - we
+only worry about nodes.  
+
+If an excess node has infinite distance, it cannont reach a weak node,
+so we can ignore it (by setting its label to [[numNodes]] and not
+putting it in a bucket).  Other strong nodes go into buckets, and
+any other nodes are initialized and ready to go.  For all nodes,
+we update the label count appropriately.
+<<scan nodes and put in buckets>>=
+maxInitialLabel = 0;		// XXX dsh hack
+    for (int i = 1; i <= numNodes; i++) {
+	Node& node = nodes[i];
+	if (node.getExcess() > 0) {
+	    if (node.distance == MAXINT) {
+		node.setLabel(numNodes);
+	    } else {
+		addStrongBranch(node);
+	    }
+	}  else if (node.distance == MAXINT) {
+	    // notice with cher graphs that some zero-deficit nodes are
+	    // unreachable during initialization???
+	    // XXX this might be an uneeded hack now
+	    node.setLabel(INIT_WEAK_LABEL);
+	    node.distance = 1;
+	}
+	labelCount[node.getLabel()]++;
+	node.resetIterations();
+if (node.getLabel() > maxInitialLabel) maxInitialLabel = node.getLabel();
+    }
+@
 \subsubsection{Queue of Nodes}
 Here is a queue of nodes.  This ought to be moved to Node.nw.
 <<Solver data>>=
@@ -2561,13 +2744,13 @@ Here is a queue of nodes.  This ought to be moved to Node.nw.
     void resetQ();
     NodePtr getNextNodeQ();
     void putNodeQ(Node& node);
-<<Solver method implementations>>=
-void PhaseSolver::resetQ()
+<<Solver inline implementations>>= 
+INLINE void PhaseSolver::resetQ()
 {
     qRead = qWrite = nodeQ;
     *qRead = nil;
 }
-NodePtr PhaseSolver::getNextNodeQ()
+INLINE NodePtr PhaseSolver::getNextNodeQ()
 {
     if (qRead < qWrite) {
 	return *qRead++;
@@ -2575,7 +2758,7 @@ NodePtr PhaseSolver::getNextNodeQ()
 	return nil;
     }
 }
-void PhaseSolver::putNodeQ(Node& node)
+INLINE void PhaseSolver::putNodeQ(Node& node)
 {
     *qWrite = &node;
     qWrite++;
