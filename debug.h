@@ -13,7 +13,12 @@
 
 #include <assert.h>
 
-#define CHECK_TREE(node, edgePtr)               \
+#define CHECK_TREE(node, edgePtr) 		\
+    IFCHECK {                                   \
+	assert((node).checkTree(edgePtr));	\
+    }
+
+#define CHECK_TREE2(node, edgePtr)               \
     IFCHECK {                                   \
         if (!(node).checkTree(edgePtr)) {   \
             (node).printTree(0);                 \
