@@ -8,12 +8,16 @@
 
 extern char* buildFlags;
 
+// set to TRUE to cause (time consuming) tree checks to take place
+Boolean checkTree = FALSE;
+
 void 
 usage()
 {
     cerr << "Usage: llps [-d] [-f] [-I init] [-N norm] [-B branch] input-graph flow-output" << endl;
     cerr << "\t -d   dump the final disposition of each node" << endl;
     cerr << "\t -f   write the flow values for each arc" << endl;
+    cerr << "\t -t   perform checkTree operations frequently" << endl;
     cerr << "\t -I   initialization function: simple, path, saturate, greedy " << endl;
     cerr << "\t -s   specify the number of splits for path init" << endl;
     cerr << "\t -B   strong bucket management: fifo, lifo, wave" << endl;
@@ -33,17 +37,20 @@ main(int argc, char** argv)
     AddBranchPtr addBranchFunc = &PhaseSolver::addBranchLifo;
     PhaseSolver* solver = new PhaseSolver();
     int numSplits = -1;
-    Boolean postOrder = TRUE;
+    Boolean postOrder = FALSE;
 
     // parse arguments
     int ch;
-    while ((ch = getopt(argc, argv, "dfI:s:M:N:B:O:")) != EOF) {
+    while ((ch = getopt(argc, argv, "dftI:s:M:N:B:O:")) != EOF) {
 	switch (ch) {
 	case 'd':
 	    dumpNodes = TRUE;
 	    break;
 	case 'f':
 	    writeFlow = TRUE;
+	    break;
+	case 't':
+	    checkTree = TRUE;
 	    break;
 	case 'I':
 	    if (strcmp(optarg, "simple") == 0) {
@@ -55,6 +62,8 @@ main(int argc, char** argv)
 	    } else if (strcmp(optarg, "greedy") == 0) {
 		initFunc = &PhaseSolver::buildGreedyPathTree;
 		// should also support greedy:N where N is numSplits
+	    } else if (strcmp(optarg, "shortest") == 0) {
+		initFunc = &PhaseSolver::buildSpTree;
 	    } else {
 		cerr << "Invalid initialization option " << optarg << endl;
 		usage();
@@ -127,7 +136,6 @@ main(int argc, char** argv)
     
     if (argc != 2) {
 	usage();
-	assert(0);
 	return 1;
     }
 
