@@ -255,6 +255,7 @@ has been changed from $label = l-1$ to $label < l$. }
 At the very least, we need to increment the label of the node by one.  However,
 we'd like to increase it by more, up to its distance.
 <<increase node label>>=
+    // maybe move to a separate chunk with #ifdefs
     if (node.distance > 0) {
 	NodeLabel newLabel = max(label + 1, node.distance);
 	if (node.getNumChildren() >= 0) {
@@ -265,9 +266,9 @@ we'd like to increase it by more, up to its distance.
 	    }
 	    assert(newLabel > label);
 	}
-	//incrementLabel(node);
 	setLabel(node, newLabel);
-	STATS(numRelabels++);		// should have num skips
+	STATS(numRelabels++);
+	STATS(if ((newLabel - label) > 1) numLabelSkips++; );
     } else {
 	incrementLabel(node);
 	STATS(numRelabels++);
@@ -329,6 +330,8 @@ INLINE void PhaseSolver::setLabel(Node& node, NodeLabel newLabel)
     labelCount[node.getLabel()]--;
     labelCount[newLabel]++;
 #endif /* COUNT_LABELS */
+    STATS(numRelabels++);
+    STATS(if ((newLabel - node.getLabel()) > 1) numLabelSkips++; );
     node.setLabel(newLabel);
     node.resetIterations();
     STATS(if (newLabel >= numNodes)  numRemovedNodes++);
@@ -2501,11 +2504,11 @@ NodeLabel PhaseSolver::relabelBranch(Node& node)
 
     if (minLabel == MAXINT) {
 	// node has no children
-	minLabel = (node.distance > node.getLabel()) ? node.distance : node.getLabel();
+	minLabel = max(node.distance, node.getLabel());
     }
     assert(minLabel >= node.getLabel());
     if (node.distance > node.getLabel()) {
-	NodeLabel newLabel = (minLabel < node.distance) ? minLabel : node.distance;
+	NodeLabel newLabel = min(minLabel, node.distance);
 	assert(newLabel >= node.getLabel());
 
 	if (newLabel > node.getLabel()) {
@@ -3266,6 +3269,7 @@ void PhaseSolver::writeStats(ostream& dout)
     dout << "c  numMergers:    " << numMergers      << endl;
     dout << "c  numSplits:     " << numSplits       << endl;
     dout << "c  numRelabels:   " << numRelabels     << endl;
+    dout << "c  numLabelSkips: " << numLabelSkips   << endl;
     dout << "c  numGlobalRelabels:   " << numGlobalRelabels     << endl;
     dout << "c  numEmptyBranchScans: " << numEmptyBranchScans << endl;
     dout << "c  numRemovedNodes: " << numRemovedNodes << endl;
@@ -3275,13 +3279,14 @@ void PhaseSolver::writeStats(ostream& dout)
     int numMergers;
     int numSplits;
     int numRelabels;
+    int numLabelSkips;
     int numGlobalRelabels;
     int numEmptyBranchScans;
     int numRemovedNodes;
-@ %def numMergers numSplits numRelabels numGlobalRelabels numEmptyBranchScans numRemovedNodes
+@ %def numMergers numSplits numRelabels numLabelSkips numGlobalRelabels numEmptyBranchScans numRemovedNodes
 <<default Solver constructor>>=
-    numMergers = numSplits = numRelabels = numGlobalRelabels = 0;
-    numEmptyBranchScans = numRemovedNodes = 0;
+    numMergers = numSplits = numRelabels = numLabelSkips = 0;
+    numGlobalRelabels = numEmptyBranchScans = numRemovedNodes = 0;
 @
 To compute the flow amount, we just scan the neighbors of the source
 node and sum the flows on those arcs.  If we were paranoid, we'd also
