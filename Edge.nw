@@ -1,38 +1,21 @@
 \subsection{Edges}
-We allocate an Edge object for each edge in the graph.  Edges store
-the current flow and the maximum capacity between source and
-destination Nodes.  
+\subsubsection{Structural Data}
+An edge represents a relationship between two nodes, the source and
+the destination.
 <<Edge data>>=
-    FlowAmount	capacity;
-    FlowAmount	flow;
     Node*	source;
     Node*	dest;
 <<default Edge constructor>>=
-    capacity = flow = 0;
     source = dest = nil;
-@ %def capacity flow source dest
+@ %def source dest
 For the purposes of the algorithm, an edge has an orientation that
 idicates which direction we are pushing additional flow - i.e.
-from child towards parent.  This allows us to define the residual
-capacity with respect to the current orientation.
+from child towards parent.  
 <<Edge data>>=
     Boolean	isForward;
 <<default Edge constructor>>=
     isForward = TRUE;
 @ %def isForward
-<<Edge methods>>=
-public:
-    FlowAmount residCapacity() const;
-<<Edge inline implementations>>=
-INLINE FlowAmount Edge::residCapacity() const
-{ 
-    if (isForward) {
-	return capacity - flow;
-    } else {
-	return capacity;
-    }
-}
-@ %def residCapacity
 We can set the orientation in two ways: we can toggle or reverse it,
 or we can set the orientation such that the forward direction points
 towards either of the endpoints.
@@ -69,6 +52,48 @@ want to be able to get the other node.
 INLINE NodePtr Edge::getOtherNode(const NodePtr node) const
 { return (node == source) ? dest : source; }
 @ %def getOtherNode
+\subsubsection{Flow Data}
+<<Edge data>>=
+    FlowAmount	capacity;
+    FlowAmount	flow;
+<<default Edge constructor>>=
+    capacity = flow = 0;
+@ %def capacity flow
+Although the capacity of an edge is fixed during the duration of
+the algorithm, the flow varies.  We always speak of {\em increasing}
+the flow, but this is done with respect to the current orientation
+of the edge, so it may in fact be reducing the amount of flow if
+the current orientation is backwards.
+<<Edge methods>>=
+public:
+    void increaseFlow(FlowAmount amt);
+<<Edge inline implementations>>=
+INLINE void Edge::increaseFlow(FlowAmount amt)
+{ 
+    if (isForward) {
+	assert ((capacity - flow) >= amt);
+	flow += amt;
+    } else {
+	assert(flow >= amt);
+	flow -= amt;
+    }
+}
+@ %def increaseFlow
+We need to to define the residual
+capacity with respect to the current orientation.
+<<Edge methods>>=
+public:
+    FlowAmount residCapacity() const;
+<<Edge inline implementations>>=
+INLINE FlowAmount Edge::residCapacity() const
+{ 
+    if (isForward) {
+	return capacity - flow;
+    } else {
+	return flow;
+    }
+}
+@ %def residCapacity
 We need a default constructor because we will be creating an
 array of edges in bulk when we know how many of them are
 in the graph.
