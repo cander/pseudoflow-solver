@@ -166,8 +166,8 @@ method.
 ostream& Edge::writeFlow(ostream& out)
 { 
     return out << "f     " 
-	       << setw(8) << source->getId() 
-	       << setw(8) << dest->getId() 
+	       << setw(8) << source->getId() << " "
+	       << setw(8) << dest->getId() << " "
 	       << setw(8) << flow;
 }
 @ %def writeFlow
@@ -196,10 +196,8 @@ We start with the boiler-plate implementation file.
 <<*>>=
 #include "Edge.h"
 #include "Node.h"
-#include "debug.h"
 #include <iostream.h>
 #include <iomanip.h>
-#include <assert.h>
 
 <<Edge method implementations>>
 @
@@ -221,6 +219,7 @@ data, and inline functions.  Again, we have more boiler-plate.
 #ifndef EDGE_H
 #define EDGE_H
 #include "types.h"
+#include "debug.h"
 <<Edge header include files>>
 
 class Edge 
