@@ -450,7 +450,7 @@ main(int argc, char** argv)
     cout << "time to convert flow: " << convertTimer << endl;
     cout << "total time: " << totalTimer << endl;
     for (int i = 0; i < numLambdas; i++) {
-	cout << "lambda[" << i << "]: " << lambdaTimers[i] << endl;
+	cout << "lambdaTime[" << i << "]: " << lambdaTimers[i] << endl;
     }
 
     time_t endTime = time(0);
@@ -463,7 +463,7 @@ main(int argc, char** argv)
     dout << "c  timeToFlow: " << convertTimer << endl;
     dout << "c  totalTime: " << totalTimer << endl;
     for (int i = 0; i < numLambdas; i++) {
-	dout << "c  lambda[" << i << "]: " << lambdaTimers[i] << endl;
+	dout << "c  lambdaTime[" << i << "]: " << lambdaTimers[i] << endl;
     }
 
     solver->writeStats(dout);
