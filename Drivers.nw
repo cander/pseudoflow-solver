@@ -176,7 +176,7 @@ main(int argc, char** argv)
     cerr << "\t -s   specify the number of splits for path init" << endl;
     cerr << "\t -B   strong bucket management: fifo, lifo, wave" << endl;
     cerr << "\t -M   merger function: pseudo, simplex" << endl;
-    cerr << "\t -N   normalization method: immed, delayed" << endl;
+    cerr << "\t -N   normalization method: immed, delayed, highest" << endl;
     cerr << "\t -O   search order: pre, post" << endl;
     cerr << "\t -L   inital node labels: const sink deficit" << endl;
 
