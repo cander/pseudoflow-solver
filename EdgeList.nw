@@ -37,6 +37,7 @@ void NodeList::init(int cap)
     for (int i = 0; i < cap; i++) {
 	array[i] = nil;
     }
+    beginIteration();
 }
 @
 The point of the list is to store items, so we need a way to add elements
@@ -99,7 +100,7 @@ INLINE Boolean NodeList::hasMoreElements()
 }
 @ %def hasMoreElements
 [[getCurrentElement]] returns the element at the current position.
-This should almost never be a whole because callers should
+This should almost never be a hole because callers should
 call [[hasMoreElements]] first.  Currently, we raise an assertion
 if this happens.  We can fix it later if need be.
 <<NodeList inline implementations>>=
@@ -135,6 +136,21 @@ INLINE void NodeList::removeCurrentElement(NodePtr nodep)
     array[currentIndex] = nil;
 }
 @ %def removeCurrentElement
+Similarly, during rehang operations we need to put a Node into
+the list at the current cursor location, which should be a hole.
+<<NodeList methods>>=
+    void addCurrentElement(NodePtr nodep);
+<<NodeList inline implementations>>=
+INLINE void NodeList::addCurrentElement(NodePtr nodep)
+{
+    if (size > 0) {
+	assert((currentIndex < size) && (array[currentIndex] == nil));
+	array[currentIndex] = nodep;
+    } else {
+	appendNode(nodep);
+    }
+}
+@ %def addCurrentElement
 Here are some direct accessor methods for use during debugging.
 These really should be 'hidden' and shared only to [[friends]].
 <<NodeList debug methods>>=
