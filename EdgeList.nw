@@ -144,7 +144,8 @@ INLINE void EdgeList::removeCurrentElement(EdgePtr edgep)
 @ %def removeCurrentElement
 Similarly, during rehang operations we need to put a Edge into
 the list at the current cursor location, which should be a hole.
-An exception is if the list is empty, in which case we aren't 
+An exception is if the list is empty or if the current element is
+at the end of the list, in which case we aren't 
 replacing the current cursor location but rather appending to
 the list.
 <<EdgeList methods>>=
@@ -152,14 +153,41 @@ the list.
 <<EdgeList inline implementations>>=
 INLINE void EdgeList::addCurrentElement(EdgePtr edgep)
 {
-    if (size > 0) {
-	assert((currentIndex < size) && (array[currentIndex] == nil));
-	array[currentIndex] = edgep;
-    } else {
+    if ((size == 0) || (currentIndex == size)) {
 	appendEdge(edgep);
+    } else {
+	assert(array[currentIndex] == nil);
+	array[currentIndex] = edgep;
     }
 }
 @ %def addCurrentElement
+Another way to add an element to the list is to add it at the first hole
+or if there are no holes, to append it.  Currently, we use a brute-force
+search for a hole, but in the future, we can speed this by keeping
+track of the lowest indexed hole we create.
+
+{\em When this is made more efficient, it should be inlined.
+     To track the lowest hole, we should init the value to `size'
+     and update it upon removing elements.  The toggle for rehang
+     might unnecessarily disturb it.  Might want a `second lowest
+     hole' member, too?}
+<<EdgeList methods>>=
+    void addHoleElement(EdgePtr edgep);
+<<EdgeList method implementations>>=
+void EdgeList::addHoleElement(EdgePtr edgep)
+{
+    int index = 0;
+    while ((array[index] != nil) && (index < capacity)) {
+	index++;
+    }
+
+    assert(index < capacity);
+    array[index] = edgep;
+    if (index == size) {
+	size++;
+    }
+}
+@ %def addHoleElement
 When a node is begin split from its parent, we need to remove a child
 edge which is probably not the current edge.  At the moment, we implement
 this via a linear search.  In the future, perhaps we could use a 
@@ -173,12 +201,33 @@ void EdgeList::removeElement(EdgePtr edgep)
     for (int i = 0; i < size; i++) {
 	if (array[i] == edgep) {
 	    array[i] = nil;
+	    <<adjust the list size>>
 	    return;
 	}
     }
     assert("failed to find edge");	// force assertion failure
 }
 @ %def removeElement
+One complication is if we remove the last element in the list,
+we should shrink the size of the list.  If there are holes
+`behind' the last element, we should shrink the list even further.
+We should also back up the current element as we go.
+<<adjust the list size>>=
+    if (i == (size - 1)) {
+	int endProbe = size - 2;
+	while (size > 0) {
+	    if (array[endProbe] == nil) {
+		size--;
+		endProbe--;
+	    } else {
+		break;
+	    }
+	}
+	if (currentIndex > size) {
+	     currentIndex = size;
+	}
+    }
+@
 Here are some direct accessor methods for use during debugging.
 These really should be 'hidden' and shared only to [[friends]].
 <<EdgeList debug methods>>=
