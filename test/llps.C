@@ -45,6 +45,8 @@ main(int argc, char** argv)
 		initFunc = &PhaseSolver::buildBlockingPathTree;
 	    } else if (strcmp(optarg, "saturate") == 0) {
 		initFunc = &PhaseSolver::saturateAllArcs;
+	    } else if (strcmp(optarg, "greedy") == 0) {
+		initFunc = &PhaseSolver::buildGreedyPathTree;
 	    } else {
 		cerr << "Invalid initialization option " << optarg << endl;
 		usage();
