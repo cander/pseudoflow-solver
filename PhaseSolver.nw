@@ -34,8 +34,15 @@ void PhaseSolver::solve()
 {
     <<initialize nodes and edges>>
 
+    TRACE(int currentPhase = 0;)
     NodePtr strongBranch = getLowestBranch();
     while (strongBranch != nil) {
+	TRACE(
+	    if ( strongBranch->getLabel() != currentPhase) {
+		currentPhase = strongBranch->getLabel();
+		trout << "Phase " << currentPhase << endl;
+	    }
+	)
 	processBranch(*strongBranch);
 	strongBranch = getLowestBranch();
     }
@@ -110,6 +117,8 @@ Boolean PhaseSolver::processSubtree(Node& node)
     // no merger
     node.incrementLabel();
     node.resetIterations();
+    TRACE(trout << "node " << node.getId() << " relabled to "
+		<< node.getLabel() << endl;);
     return FALSE;
 }
 @ %def processSubtree
@@ -163,13 +172,14 @@ splits within the weak branch.
 NodeLabel PhaseSolver::merge(Node& strong, Node& weak, Edge& edge)
 {
     TRACE( trout << "merge " << strong.getId() << " ("
-		   << strong.getExcess() << ") to " 
+		   << strong.getRootExcess() << ") to " 
 		   << weak.getId() << " ("
-		   << weak.getExcess() << "), cap "
+		   << weak.getRootExcess() << "), cap "
 		   << edge.residCapacity(strong) << endl;)
     Node& strongRoot = *strong.rehang();
     weak.addChild(strong, edge);
     CHECK_TREE(weak, weak.getParentEdge());
+    CHECK_TREE(*weak.getRoot(), nil);
     strongPush(strongRoot, weak);
     NodeLabel splitLabel = weakPush(weak);
 
@@ -224,6 +234,10 @@ NodeLabel PhaseSolver::weakPush(Node& src)
 	currNode = parent;
     }
     CHECK_TREE(*currNode, nil);
+
+    if (currNode->getExcess() > 0) {	// ZERO_DEFICT
+	addStrongBranch(*currNode);
+    }
 
     return splitLabel;
 }
