@@ -8,7 +8,8 @@ when the problem instance is read.
     Node*	nodes;
     Edge*	edges;
 <<default Solver constructor>>=
-    nodes = edges = nil;
+    nodes = nil;
+    edges = nil;
 @ %def nodes edges
 Just for safety checking, we should also keep track of the
 number of elements in each of these arrays.
@@ -161,6 +162,11 @@ splits within the weak branch.
 <<Solver method implementations>>=
 NodeLabel PhaseSolver::merge(Node& strong, Node& weak, Edge& edge)
 {
+    TRACE( trout << "merge " << strong.getId() << " ("
+		   << strong.getExcess() << ") to " 
+		   << weak.getId() << " ("
+		   << weak.getExcess() << "), cap "
+		   << edge.residCapacity(strong) << endl;)
     Node& strongRoot = *strong.rehang();
     weak.addChild(strong, edge);
     CHECK_TREE(weak, weak.getParentEdge());
@@ -303,6 +309,12 @@ NodePtr PhaseSolver::getLowestBranch()
 <<Solver inline implementations>>=
 <<header include files>>=
 <<C++ overhead>>=
+    PhaseSolver();
+<<Solver method implementations>>=
+PhaseSolver::PhaseSolver()
+{
+    <<default Solver constructor>>
+}
 @
 \subsection{Input Output Functions}
 We need routines to read Dimacs problem files and write 
@@ -330,6 +342,7 @@ Boolean PhaseSolver::readDimacsInstance(const char* filename)
 {
     FILE* fp = fopen(filename, "r");
     if (fp != NULL) {
+	instanceFilename = filename;
 	<<local variables for reading>>
 	<<read instance and initialize edges>>
 	<<initialize nodes>>
@@ -341,6 +354,10 @@ Boolean PhaseSolver::readDimacsInstance(const char* filename)
 }
 <<implementation header files>>=
 #include <stdio.h>
+<<Solver data>>=
+    const char* instanceFilename;
+<<default Solver constructor>>=
+    instanceFilename = "<unknown instance>";
 @ %def readDimacsInstance
 Reading the problem instance is farily straightforward.  We
 read lines until the end of file.  Each line
@@ -470,6 +487,69 @@ node degrees.
 <<initialize nodes>>=
     delete[] nodeDegrees;
 @
+After we read an instance and solve it, we need to write the result
+out.  The Dimacs flow file is very similar to the instance in
+that every line is identified by an initial type character followed
+by arguments.  After printing header information, we print the
+total flow amount and the flow on each arc.
+<<Solver methods>>=
+    void writeDimacsFlow(const char* filename);
+<<Solver method implementations>>=
+void PhaseSolver::writeDimacsFlow(const char* filename)
+{
+    ofstream dout(filename, ios::out);
+    if (dout == nil) {
+	cerr << "Unable to open output file: " << filename << endl;
+	return;
+    }
+    <<write header>>
+    dout << "s " << 0 << endl;
+    <<dump arcs>>
+    dout.close();
+}
+@ %def writeDimacsFlow
+<<write header>>=
+    extern char* buildFlags;
+    extern char* buildDate;
+    dout << "c" << endl;
+    dout << "c  buildFlags: " << buildFlags << endl;
+    dout << "c  buildDate: " << buildDate << endl;
+    dout << "c  instance: " << instanceFilename << endl;
+    dout << "c  numNodes: " << numNodes << endl;
+    dout << "c  numArcs: "  << numEdges << endl;
+    dout << "c" << endl;
+@
+To dump the edges, we just iterate over the array of edges and 
+print them out.
+<<dump arcs>>=
+    for (int i = 0; i < numEdges; i++) {
+	edges[i].writeFlow(dout) << endl;
+    }
+@
+Here is a new method to print the final disposition of all of the nodes
+in the graph.  
+<<Solver methods>>=
+    void dumpNodes();
+<<Solver method implementations>>=
+void PhaseSolver::dumpNodes()
+{
+    cout << " Node id  excess  strong/weak" << endl;
+
+    for (int i = 1; i <= numNodes; i++) {
+	Node& node = nodes[i];
+	cout << setw(8) << node.getId() << setw(8);
+	if (&node == sourceNode) {
+	    cout << "source";
+	} else if (&node == sinkNode) {
+	    cout << "sink";
+	} else {
+	     cout << node.getExcess() << setw(8)
+		  << (node.isStrong() ? "strong" : "weak");
+	 }
+	 cout << endl;
+    }
+}
+@ %def dumpNodes
 \subsection{File Boiler Plate}
 We start with the boiler-plate implementation file. 
 <<*>>=
@@ -477,6 +557,7 @@ We start with the boiler-plate implementation file.
 #include "Node.h"
 #include "debug.h"
 #include <iostream.h>
+#include <fstream.h>
 #include <iomanip.h>
 #include <assert.h>
 <<implementation header files>>
