@@ -235,34 +235,74 @@ than a sub-class.
     double      bParam;
 #endif PARAM_SENSE
 @
-Given a new value for $\lambda$, we compute the new capacity and return
-the change in capacity.  In order to accomodate mining data, we take
-the absolute value of the capacity because sink-adjacent arcs will start
-with a large negative value of $a$ (the cost to extract a block), and 
-the term $b \lambda$ (the value of ore) will increase.  By taking the
-absolute value, we get a positive capacity (required for max-flow) and
-it will decrease as $\lambda$ increases (required for the GGT
-formulation).  Note that once $b \lambda$ exceeds $a$, the capacity will
-increase even though it is still adjacent to the sink.  This doesn't
-seem to be a problem.
+We set the initial capacity based on the initial value of lambda.  Because
+we take the absolute value of the the capacity, we need to signal the 
+caller as to whether the capacity is actually negative.
 <<Edge methods>>=
-    FlowAmount increaseLambda(double newLabmda);
+    Boolean setInitialCapacity(double lambda);
 <<Edge method implementations>>=
-FlowAmount Edge::increaseLambda(double newLambda)
+Boolean Edge::setInitialCapacity(double lambda)
 {
-    FlowAmount oldCapacity = capacity;
+    Boolean negative = FALSE;
 #ifdef PARAM_SENSE
-    capacity = (FlowAmount)fabs(aParam + bParam * newLambda);
-    // assume we always want the arc saturated
-    //flow = capacity;	- XXX???
+    FlowAmount newCapacity = (FlowAmount)(aParam + bParam * lambda);
+    negative = (newCapacity < 0) ? TRUE : FALSE;
+    capacity = abs(newCapacity);
 #endif PARAM_SENSE
 
-    return capacity - oldCapacity;
+    return negative;
 }
-@ %def increaseLambda
+@ %def setInitialCapacity
 <<Edge header include files>>=
 #include <math.h>
 @
+Given a new value for $\lambda$, we need to update the arc capacity.
+This method is actually specific to the formulation used in the mining
+problem.  In particular, sink-adjacent nodes have negative weights, but
+the arc between them and the sink uses the absolute value of the capacity.
+Furthermore, as $\lambda$ increases, the block value can change from
+negative to positive.  In the formulation, we need to know when this
+happens so we can move the node from the sink to the source.
+
+Therefore, to provide all this support, we have two input parameters (the
+old and new lambda values) and two output paramters (the amount of change
+and whether we changed sign).  We use the old lambda to compute the current
+capacity with its real sign (not absolute valued).  Then we can compute
+the new capacity with the new lambda, taking the absolute value if necessary.
+<<Edge methods>>=
+    Boolean increaseLambda(double oldLambda, double newLambda, FlowAmount& delta);
+<<Edge method implementations>>=
+Boolean Edge::increaseLambda(double oldLambda, double newLambda, FlowAmount& delta)
+{
+    assert(newLambda >= oldLambda);
+    Boolean crossedZero = FALSE;
+#ifdef PARAM_SENSE
+    FlowAmount oldCapacity  = (FlowAmount)(aParam + bParam * oldLambda);
+    FlowAmount newCapacity  = (FlowAmount)(aParam + bParam * newLambda);
+    delta = newCapacity - oldCapacity;
+    capacity = abs(newCapacity);
+    crossedZero = ((oldCapacity < 0) && (newCapacity > 0)) ? TRUE : FALSE;
+#endif PARAM_SENSE
+
+    return crossedZero;
+}
+@ %def increaseLambda
+When we increase the capacity of an arc into the sink above zero, we move the
+arc to the source.  This involves changing the source and destination.
+We assume that [[increaseLambda]] has already established the new, positive
+capacity.
+<<Edge methods>>=
+    void reInit(Node& src, Node& dst);
+<<Edge method implementations>>=
+void Edge::reInit(Node& src, Node& dst)
+{
+    assert((source == &dst) || (dest == &src));	  // should be: (v,t) <--> (s,v)
+    source = &src;
+    dest = &dst;
+    flow = 0;
+    isForward = TRUE;
+}
+@ %def reInit
 \subsection{Miscellaneous Functions}
 We need a way to print the contents of an edge to an output stream,
 mostly for debugging.
