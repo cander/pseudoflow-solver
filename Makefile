@@ -98,6 +98,10 @@ doc.dvi:	doc.tex allcode.tex
 	latex doc
 	latex doc
 
+# just run latex once quickly and throw up xdvi
+xdvi:	doc.tex allcode.tex
+	latex doc && xdvi doc
+
 doc.ps: doc.dvi
 	dvips -o doc.ps doc.dvi
 
