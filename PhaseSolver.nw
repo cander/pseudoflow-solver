@@ -80,12 +80,18 @@ node is strong (labeled 2) or weak (labeled 1).
 	Node& node = nodes[i];
 	if (node.getExcess() > 0) {	// ZERO DEFICIT
 	    node.setLabel(2);
+	    labelCount[2]++;
 	    addStrongBranch(node);
 	} else {
 	    node.setLabel(1);
+	    labelCount[1]++;
 	}
     }
-@
+<<Solver data>>=
+    int* labelCount;
+<<default Solver constructor>>=
+    labelCount = nil;
+@ %def labelCount
 \subsection{Processing Branches}
 We process the tree one branch at a time looking for mergers or
 relabeling nodes.  As soon as there is a merger, we stop processing
@@ -94,14 +100,31 @@ branch from the buckets.  It could be that we resume processing this
 branch, which is OK.  In fact, it is probably desireable since
 the branch has been inverted.  If there was no merger, we
 move the branch to the next bucket.
+
+As an optimization, we check to see if there are any nodes that
+we could possibly merge with before invesigating the branch.
+If there are no nodes with a label one less than ours, we just
+relabel the whole branch.
 <<Solver methods>>=
     void processBranch(Node& root);
 <<Solver method implementations>>=
 void PhaseSolver::processBranch(Node& root)
 {
-    Boolean performedMerger = processSubtree(root);
-    if (!performedMerger) {
+#ifdef COUNT_LABELS
+    if (labelCount[root.getLabel() - 1] == 0) {
+#else /* !COUNT_LABELS */
+    if (FALSE) {
+#endif /* COUNT_LABELS */
+	TRACE( trout << "Relabel branch " << root.getId() 
+	             << " with label " << root.getLabel() << endl; )
+	relabelSubtree(root);
 	addStrongBranch(root);	// XXX maybe this should be in solve
+
+    } else {
+	Boolean performedMerger = processSubtree(root);
+	if (!performedMerger) {
+	    addStrongBranch(root);	// XXX maybe this should be in solve
+	}
     }
 }
 @ %def processBranch
@@ -123,7 +146,7 @@ Boolean PhaseSolver::processSubtree(Node& node)
     <<process all children>>
     <<look for merger among neighbors>>
     // no merger
-    node.incrementLabel();
+    incrementLabel(node);
     node.resetIterations();
     TRACE(trout << "node " << node.getId() << " relabled to "
 		<< node.getLabel() << endl;);
@@ -292,6 +315,51 @@ way to find a minimal source set.
     splitOnZeroCapacity = FALSE;
     zeroDeficitIsStrong = FALSE;
 @ %def splitOnZeroCapacity zeroDeficitIsStrong
+Back in [[processSubtree]] we had a simple method call to increment
+the label on a node.  Normally, we would just call [[incrementLabel]]
+on the node, but we want to track how many nodes we have with each
+label so that we can terminate the algorithm early.
+<<Solver methods>>=
+    void incrementLabel(Node& node);
+@
+When the label of a node is incremented, we decrement the old label
+count by one and increment the new label count.
+<<Solver inline implementations>>=
+INLINE void PhaseSolver::incrementLabel(Node& node)
+{
+#ifdef  COUNT_LABELS 
+    NodeLabel l = node.getLabel();
+    labelCount[l]--;
+    labelCount[l + 1]++;
+#endif /* COUNT_LABELS */
+    node.incrementLabel();
+}
+@ %def incrementLabel
+We use this code to be able to know that a branch cannot merge with
+any weak nodes.  In this case we need to increment the label
+of the branch, and all of its children that have the same label.
+This is really a stripped down version of [[processSubtree]].
+<<Solver methods>>=
+    void relabelSubtree(Node& node);
+<<Solver method implementations>>=
+void PhaseSolver::relabelSubtree(Node& node)
+{
+    NodeLabel label = node.getLabel();
+    while (node.hasMoreChildren()) {
+	Node& child = node.getCurrentChild();
+	assert(child.getLabel() >= label);
+	if (child.getLabel() == label) {
+	    relabelSubtree(child);
+	}
+	node.advanceChildren();
+    }
+
+    incrementLabel(node);
+    node.resetIterations();
+    TRACE(trout << "node " << node.getId() << " Relabled to "
+		<< node.getLabel() << endl;);
+}
+@ %def processSubtree
 \subsection{Managing Strong Branches}
 We manage strong branches using an array of linked lists of Nodes.
 We refer to each such element in the array as a `bucket'.
@@ -480,8 +548,10 @@ allocate an extra node (node zero), that never really gets used.
     edges = new Edge[numEdges];
     buckets = new NodePtr[numNodes + 1];
     nodeDegrees = new int[numNodes + 1];
+    labelCount = new int[numNodes + 1];
+
     for (int i = 0; i <= numNodes; i++) {
-	nodeDegrees[i] = 0;
+	nodeDegrees[i] = labelCount[i] = 0;
 	buckets[i] = nil;
     }
 <<local variables for reading>>=
