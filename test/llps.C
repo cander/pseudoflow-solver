@@ -156,12 +156,11 @@ main(int argc, char** argv)
     }
     solver->postOrderSearch = postOrder;
 
-
     time_t beginTime = time(0);
-    Timer initTimer;
-    initTimer.start();
+    Timer readTimer;
+    readTimer.start();
     Boolean readOK =  solver->readDimacsInstance(instanceName);
-    initTimer.stop();
+    readTimer.stop();
 
     if (readOK == FALSE) {
 	dout << "c  CANNOT READ INSTANCE" << endl;
@@ -169,18 +168,19 @@ main(int argc, char** argv)
     }
 
     cout << "read problem instance OK" << endl;
+
     Timer totalTimer;
-    totalTimer.start();
+    totalTimer.start();			// total time is everything except I/O
 
     // build initial tree
     Timer treeTimer;
+    Timer solveTimer;
     treeTimer.start();
+    solveTimer.start();			// tree time is part of solve
     (solver->*initFunc)();
     treeTimer.stop();
 
     // solve
-    Timer solveTimer;
-    solveTimer.start();
     (solver->*solverFunc)(addBranchFunc);
     solveTimer.stop();
 
@@ -196,21 +196,21 @@ main(int argc, char** argv)
 
     totalTimer.stop();
 
-    cout << "time to readInstance: " << initTimer << endl;
-    cout << "time to establish tree: " << treeTimer << endl;
-    cout << "done solving: " << solveTimer << endl;
-    cout << "time to convert flow: " << convertTimer << endl;
-    cout << "total time: " << totalTimer << endl;
+    cout << "time to readInstance: "	<< readTimer << endl;
+    cout << "time to establish tree: "	<< treeTimer << endl;
+    cout << "done solving: "		<< solveTimer << endl;
+    cout << "time to convert flow: "	<< convertTimer << endl;
+    cout << "total time: "		<< totalTimer << endl;
 
     time_t endTime = time(0);
-    dout << "c  beginRun: " << ctime(&beginTime);
-    dout << "c  endRun: " << ctime(&endTime);
+    dout << "c  beginRun: "		<< ctime(&beginTime);
+    dout << "c  endRun: "		<< ctime(&endTime);
 
-    dout << "c  timeToRead: " << initTimer << endl;
-    dout << "c  timeToInitialize: " << treeTimer << endl;
-    dout << "c  timeToSolve: " << solveTimer << endl;
-    dout << "c  timeToFlow: " << convertTimer << endl;
-    dout << "c  totalTime: " << totalTimer << endl;
+    dout << "c  timeToRead: "		<< readTimer << endl;
+    dout << "c  timeToInitialize: "	<< treeTimer << endl;
+    dout << "c  timeToSolve: "		<< solveTimer << endl;
+    dout << "c  timeToFlow: "		<< convertTimer << endl;
+    dout << "c  totalTime: "		<< totalTimer << endl;
 
     solver->writeStats(dout);
 
