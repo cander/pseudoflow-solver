@@ -159,6 +159,9 @@ null out the parent edge.
 void Node::split()
 {
     assert(parentEdge != nil);
+    TRACE( trout << "split " << id << " from " 
+		 << getParentNode()->id << " with excess " 
+		 << excess << endl;)
     getParentNode()->children.removeElement(parentEdge);
     parentEdge = nil;
 }
@@ -457,6 +460,29 @@ and check each of them in turn.  We must skip holes in the list
 	}
     }
 @
+Here is an inefficient function to find the root of a node.
+It is only intended for debugging use where the performance
+hit of chasing up to the root is not a problem.
+<<debugging functions>>=
+    NodePtr getRoot();
+<<Node method implementations>>=
+NodePtr Node::getRoot()
+{
+    Node* currNode = this;
+    while (currNode->parentEdge != nil) {
+	currNode = getParentNode();
+    }
+    return currNode;
+}
+@ %def getRoot
+With that function, we can easily (if not efficiently) determine if
+a node is strong or weak.
+<<debugging functions>>=
+    Boolean isStrong();
+<<Node method implementations>>=
+Boolean Node::isStrong()
+{ return (getRoot()->excess > 0) ? TRUE : FALSE; }
+@ %def isStrong
 We need a few function declarations for functions that the
 compiler will automatically generate for us.  We don't want to use
 these functions because doing so would signal an error in our code
