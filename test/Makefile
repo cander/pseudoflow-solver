@@ -23,6 +23,8 @@ pllps: pllps.o ../libpsa.a
 
 llps: llps.o ../libpsa.a
 	$(CXX) -o llps llps.o $(LDFLAGS)
+PmaxToMax: PmaxToMax.o ../libpsa.a
+	$(CXX) -o PmaxToMax PmaxToMax.o $(LDFLAGS)
 
 addchild: addchild.o ../libpsa.a
 	$(CXX) -o addchild addchild.o $(LDFLAGS)
@@ -31,6 +33,7 @@ addchild: addchild.o ../libpsa.a
 
 addchild.o: ../Node.h ../Edge.h ../buildinfo.c
 llps.o: ../Node.h ../Edge.h ../PhaseSolver.h ../buildinfo.c
+pllps.o: ../Node.h ../Edge.h ../PhaseSolver.h ../buildinfo.c
 
 
 profile:
