@@ -409,6 +409,7 @@ void PhaseSolver::strongPush(Node& src, Node& dest)
     NodePtr currNode = &src;
     while (currNode != &dest) {
 	NodePtr parent = currNode->getParentNode();
+	STATS(numPushToParent++);
 	Boolean performedSplit = currNode->pushToParent();
 	<<check for zero-capcity split>>
 
@@ -463,6 +464,7 @@ Boolean PhaseSolver::weakPush(Node& src)
     NodePtr parent = currNode->getParentNode();
 
     while (parent != nil) {
+	STATS(numPushToParent++);
 	Boolean performedSplit = currNode->pushToParent();
 	currNode->clearFlag(DEFERRED);
 	<<check for zero-capcity split>>
@@ -1157,6 +1159,7 @@ correct.  However, we still need to split ourselves.
 <<weak side bottleneck>>=
     NodePtr weakParent = weakChild->getParentNode();
     assert(weakParent != nil);
+    //STATS(numPushToParent++);
     weakChild->pushToParent();
     weakChild->split();
     assert(weakChild->getExcess() == 0);
@@ -3577,6 +3580,7 @@ void PhaseSolver::writeStats(ostream& dout)
     dout << "c  numNodes:      " << numNodes        << endl;
     dout << "c  numArcs:       " << numEdges        << endl;
     dout << "c  numMergers:    " << numMergers      << endl;
+    dout << "c  numPushToParent: " << numPushToParent      << endl;
     dout << "c  numSplits:     " << numSplits       << endl;
     dout << "c  numRelabels:   " << numRelabels     << endl;
     dout << "c  numLabelSkips: " << numLabelSkips   << endl;
@@ -3587,15 +3591,16 @@ void PhaseSolver::writeStats(ostream& dout)
     dout << "c"                                     << endl;
 <<Solver data>>=
     int numMergers;
+    int numPushToParent;
     int numSplits;
     int numRelabels;
     int numLabelSkips;
     int numGlobalRelabels;
     int numEmptyBranchScans;
     int numRemovedNodes;
-@ %def numMergers numSplits numRelabels numLabelSkips numGlobalRelabels numEmptyBranchScans numRemovedNodes
+@ %def numMergers numPushToParent numSplits numRelabels numLabelSkips numGlobalRelabels numEmptyBranchScans numRemovedNodes
 <<default Solver constructor>>=
-    numMergers = numSplits = numRelabels = numLabelSkips = 0;
+    numMergers = numPushToParent = numSplits = numRelabels = numLabelSkips = 0;
     numGlobalRelabels = numEmptyBranchScans = numRemovedNodes = 0;
 @
 To compute the flow amount, we just scan the neighbors of the source
