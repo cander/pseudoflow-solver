@@ -1,4 +1,4 @@
-%% $Revision: 1.81 $, $Date: 2001/03/26 18:05:17 $
+%% $Revision: 1.82 $, $Date: 2001/09/23 22:36:37 $
 \section{Pseudoflow Solver}
 The solver manages the entire problem instance.  Initially
 this includes the nodes and edges.  These are stored as contiguous
@@ -164,6 +164,7 @@ The function returns true or false if we perform a merger.
 Boolean PhaseSolver::processSubtree(Node& node)
 {
     NodeLabel label = node.getLabel();
+    STATS(numNodeVisits++);
     if (postOrderSearch) {
 	<<process all children>>
 	<<look for merger among neighbors>>
@@ -190,6 +191,14 @@ If a child has a higher label, we just ignore it.  By monotonicity,
 it can't have a label less than ours.  If we process the sub-tree
 and that generates a merger we return immediately.
 <<process all children>>=
+    if (scanChildren(node, label)) {
+	return TRUE;
+    }
+<<Solver methods>>=
+    Boolean scanChildren(Node& node, NodeLabel label);
+<<Solver inline implementations>>=
+INLINE Boolean PhaseSolver::scanChildren(Node& node, NodeLabel label)
+{
     while (node.hasMoreChildren()) {
 	Node& child = node.getCurrentChild();
 	assert(child.getLabel() >= label);
@@ -204,12 +213,18 @@ and that generates a merger we return immediately.
 	}
 	node.advanceChildren();
     }
-@
+    return FALSE;
+}
+@ %def scanChildren
 Processing neighbors is a bit different.  Here is where we look for
 a merger to a node with label exactly one less that ours
 (given that the arc has residual capacity).  
 If we find that, we will merge and return true immediately.
-
+<<look for merger among neighbors>>=
+    if (scanNeighbors(node, label)) {
+	return TRUE;
+    }
+@
 {\em Note: there is a slight problem below.  We check for 
 a positive capacity on the arc (instead of non-negative), 
 but if we ever implemented a scheme
@@ -240,10 +255,15 @@ to tell the difference between strong and weak nodes (weak nodes still
 have label less than ours).  With a genrmf graph, I only saw a differnce of
 two in the number of mergers.
 }
-<<look for merger among neighbors>>=
+<<Solver methods>>=
+    Boolean scanNeighbors(Node& node, NodeLabel label);
+<<Solver inline implementations>>=
+INLINE Boolean PhaseSolver::scanNeighbors(Node& node, NodeLabel label)
+{
     if (node.distance <= label) {
 //	int dist = node.distance;
 	while (node.hasMoreNeighbors()) {
+	    STATS(numArcScans++);
 	    Edge& neighborEdge = node.getCurrentNeighbor();
 	    Node& neighbor = *neighborEdge.getOtherNode(&node);
 	    if ((neighbor.getLabel() < label) &&
@@ -261,7 +281,10 @@ two in the number of mergers.
 	    node.advanceNeighbors();
 	}
     }
-@
+
+    return FALSE;
+}
+@ %def scanNeighbors
 If we scan a node and do not find a merger, we want to increase the
 label of the node.  At the very least, we need to increment the label of 
 the node by one.  However, if we are using distance labeling,
@@ -374,7 +397,7 @@ void PhaseSolver::merge(Node& strong, Node& weak, Edge& edge)
 		   << strong.getLabel() << endl;)
     STATS(numMergers++);
 
-    Node& strongRoot = *strong.rehang();
+    Node& strongRoot = *strong.rehang(STATS(numRehangs));
     weak.addChild(strong, edge);
     CHECK_TREE(*weak.getRoot(), nil);
 
@@ -4032,6 +4055,9 @@ void PhaseSolver::writeStats(ostream& dout)
     dout << "c  numNodes:      " << numNodes        << endl;
     dout << "c  numArcs:       " << numEdges        << endl;
     dout << "c  numMergers:    " << numMergers      << endl;
+    dout << "c  numArcScans:    " << numArcScans      << endl;
+    dout << "c  numNodeVisits:    " << numNodeVisits      << endl;
+    dout << "c  numRehangs:    " << numRehangs      << endl;
     dout << "c  numPushToParent: " << numPushToParent      << endl;
     dout << "c  numSplits:     " << numSplits       << endl;
     dout << "c  numRelabels:   " << numRelabels     << endl;
@@ -4042,6 +4068,9 @@ void PhaseSolver::writeStats(ostream& dout)
     dout << "c  lowestLabel:   " << lowestLabel     << endl;
 <<Solver protected members>>=
     int numMergers;
+    int numArcScans;
+    int numNodeVisits;
+    int numRehangs;
     int numPushToParent;
     int numSplits;
     int numRelabels;
@@ -4049,10 +4078,12 @@ void PhaseSolver::writeStats(ostream& dout)
     int numGlobalRelabels;
     int numEmptyBranchScans;
     int numRemovedNodes;
-@ %def numMergers numPushToParent numSplits numRelabels numLabelSkips numGlobalRelabels numEmptyBranchScans numRemovedNodes
+@ %def numMergers numPushToParent numSplits numRelabels numLabelSkips numGlobalRelabels numEmptyBranchScans numRemovedNodes numArcsScans
+numNodeVisits numRehangs
 <<default Solver constructor>>=
     numMergers = numPushToParent = numSplits = numRelabels = numLabelSkips = 0;
-    numGlobalRelabels = numEmptyBranchScans = numRemovedNodes = 0;
+    numArcScans = numNodeVisits = numGlobalRelabels = numEmptyBranchScans = 
+	numRehangs = numRemovedNodes = 0;
 @
 To compute the flow amount, we just scan the neighbors of the source
 node and sum the flows on those arcs.  If we were paranoid, we'd also
@@ -4190,7 +4221,7 @@ PhaseSolver::PhaseSolver()
 @
 We start with the boiler-plate implementation file. 
 <<*>>=
-// $Revision: 1.81 $, $Date: 2001/03/26 18:05:17 $
+// $Revision: 1.82 $, $Date: 2001/09/23 22:36:37 $
 // This C++ code was generated by noweb from the corresponding .nw file
 #include "PhaseSolver.h"
 #include "debug.h"
@@ -4221,7 +4252,7 @@ Now, we'll add the simplex solver methods.
 The header defines the [[PhaseSolver]] class, its member functions, member
 data, and inline functions.  Again, we have more boiler-plate.
 <<header>>=
-// $Revision: 1.81 $, $Date: 2001/03/26 18:05:17 $
+// $Revision: 1.82 $, $Date: 2001/09/23 22:36:37 $
 // This C++ code was generated by noweb from the corresponding .nw file
 #ifndef SOLVER_H
 #define SOLVER_H
