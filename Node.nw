@@ -670,7 +670,7 @@ a node is strong or weak.
 <<Node method implementations>>=
 Boolean Node::isStrong(Boolean zeroExcessIsStrong)
 { 
-    FlowAmount excess = getRoot()->excess > 0;
+    FlowAmount excess = getRoot()->excess;
     if (excess > 0) {
 	return TRUE;
     } else if (excess == 0 && zeroExcessIsStrong) {
