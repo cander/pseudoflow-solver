@@ -1518,7 +1518,9 @@ for building the initial tree will want start by saturating
 these arcs.  When we saturate an edge, we remove it from the list
 of arcs for the node.  This will prevent flow from going back to
 either the source or the sink without having to special-case these
-arcs at run-time.
+arcs at run-time.  Also, we want to deal with arcs going into
+the source or out of the sink because these will never be used
+in an optimal solution.
 <<Solver methods>>=
     void saturateSourceSinkArcs();
 <<Solver method implementations>>=
@@ -1556,9 +1558,10 @@ void PhaseSolver::saturateSourceSinkArcs()
 @ %def saturateSourceSinkArcs
 Again, since determining the initial status of nodes is apt
 to be a common subroutine of many initialization procedures,
-we have it as a separate method.  We simply iterate over
-all of the nodes setting their initial labels based on their
-excess.  Anything with positive excess is assumed to be
+we have it as a separate method.  We iterate over
+the root nodes.  We label all nodes below a root with the
+label based on the excess of the root.
+Anything with positive excess is assumed to be
 strong, and everything else is assumed to be weak.
 Strong nodes are added as strong branches.
 
@@ -1586,11 +1589,13 @@ void PhaseSolver::setInitialNodeStatus()
     // assert(labelCount[INIT_WEAK_LABEL] + 
    //          labelCount[INIT_STRONG_LABEL] == numNodes);
 }
+@ %def setInitialNodeStatus
 <<Solver data>>=
     static const int INIT_STRONG_LABEL=2;
     static const int INIT_WEAK_LABEL=1;
     static const int INIT_ZERO_LABEL=1;
-@ %def setInitialNodeStatus
+@ %def INIT_STRONG_LABEL INIT_WEAK_LABEL INIT_ZERO_LABEL
+@
 This function sets the label of a node and all of its children.
 It also updates the count of how many nodes have each label value.
 <<Solver methods>>=
@@ -1615,7 +1620,6 @@ void PhaseSolver::labelBranch(Node& node, NodeLabel label)
 <<default Solver constructor>>=
     labelCount = nil;
 @ %def labelCount 
-@ %def INIT_STRONG_LABEL INIT_WEAK_LABEL INIT_ZERO_LABEL
 \subsubsection{Blocking Path Initialization}
 A simple extension to the idea of just simply saturating the
 source- and sink-adjacent arcs is to try to push flow from the
@@ -1937,6 +1941,25 @@ void PhaseSolver::saturateAllArcs()
 }
 @ %def saturateAllArcs
 \subsection{Recovering a Feasible Flow}
+When the pseudoflow algorithm completes, there are no merger arcs between
+the strong nodes and weak nodes, and there is excess at the roots of
+strong branches and deficits at the roots of weak branches.  We need
+to return the excess/deficit to the source/sink.  We do this by
+reducing the flows on arcs along paths to the source/sink.
+
+To find paths to the source/sink we start from nodes with excess/deficit
+and perform a depth first search along neighbor arcs that have what
+we call 'reduction capacity', which is like residual capacity except
+that it only applies to reducing the flow on arcs.  When we find
+the source/sink, we reduce the flow along the path we identified by
+an amount equal to the capacity of the bottleneck arc.  While we search,
+we label each node with a mark value to identify cycles.
+
+This code is not really a bottleneck, so we don't need to optimize it
+much.  However, if we were to scan the neighbors of the source and
+sink node, we could easily return flow in one simple push.  This works
+really well for the sink because (unless were are using saturate-all)
+all of the deficit nodes are adjacent to the sink.
 <<Solver public declarations>>=
     void convertToFlow();
 <<Solver method implementations>>=
@@ -1964,8 +1987,6 @@ we removed the arcs from/to the
 source/sink to prevent flow from going back to the source/sink.
 Now, we actaully want to be able to get to the source and sink,
 so we add them back.
-{\em Is this needed?  If we removed the arc, it has zero
-     flow, so we don't be using it, right?}
 <<replace source and sink arcs>>=
     for (int i = 0 ; i < numEdges; i++) {
 	Edge& edge = edges[i];
@@ -1990,7 +2011,10 @@ We also want to remove arcs with zero flow on them because we know
 we don't need them to push flow back.  We iterate over the nodes
 instead of the arcs so that we can use [[removeCurrentNeighbor]]
 via [[pruneZeroFlowArcs]] which is much more efficient than
-removing an arbitrary neighbor arc.
+removing an arbitrary neighbor arc.  (In an earlier version of the
+code we iterated over the arcs and called [[removeNeighbor]], which
+resulted in an $O(m^2)$ algorithm that performed very badly for
+dense graphs.)
 <<prune zero flow arcs>>=
     for (int i = 1; i <= numNodes; i++) {
 	Node& node = nodes[i];
@@ -2000,6 +2024,10 @@ removing an arbitrary neighbor arc.
 	node.pruneZeroFlowArcs();
     }
 @ 
+If a node has excess/deficit, we begin search from the node among its
+neighbors trying to find a path back to the source/sink.
+Each time we find a path, we reduce the excess/deficit on this node.
+We continue until the node has zero excess.
 <<Solver public declarations>>=
     void pushRootExcess(Node& node);
 <<Solver method implementations>>=
@@ -2046,7 +2074,14 @@ Hoch97 says
 we want to reduce the flow of all arcs along the cycle.
 However, we have found that this is unnecessary.  If we find
 a node that we've already visited, we just ignore it and search
-for other paths to the source/sink.
+for other paths to the source/sink.  Theoretically, ours is an
+$O(m^2)$ algorithm compared to $O(mn)$.  However, we found no
+appreciable difference in practice.  The basic difference is that
+cycle-cancelling expends effort reducing the flow along cycles
+which does not reduce the excess/deficit, which is a bit of a waste
+of effort.  Whereas our algorithm does not waste the effort, but may
+expend more effort because it could continue `stumbling' into the
+same cycles over and over.
 <<Solver public declarations>>=
     Boolean visitNode(Node& node, Node& prevNode, FlowAmount& bottleCap, 
     		  Boolean seekingSource);
@@ -2074,17 +2109,21 @@ PhaseSolver::visitNode(Node& node, Node& prevNode, FlowAmount& bottleCap,
     return result;
 }
 @ %def visitNode
-We terminate the recursion when we find a cycle or the source/sink.
+We terminate the recursion when we find the source/sink.
 We could have eliminated the tail recursion by checking for it
 before visiting the node (in the [[while]] loop), but this seems
-simpler.
+simpler.  
+Note, it should be impossible to find a path to the sink/source if we
+are searching for the source/sink.
 <<check for terminating recursion>>=
     if (node.flag == currentMark) {
 	return FALSE;
     } else if (&node == sourceNode) {
-	return (seekingSource) ? TRUE : FALSE;
+	assert(seekingSource);
+	return TRUE;
     } else if (&node == sinkNode) {
-	return (seekingSource) ? FALSE : TRUE;
+	assert(!seekingSource);
+	return TRUE;
     }
 @
 To visit a node, we compute a new, tentative bottleneck capacity, but
@@ -2119,6 +2158,7 @@ void PhaseSolver::reduceFlow(Node& from, Node& to, Edge& edge,
 {
     edge.reduceFlow(amt);
 
+    // XXX-should this use reduction capacity?
     if (edge.residCapacity(from) == 0) {
 	TRACE(trout << "Removing " << edge << " from " << from.getId() << endl);
 	from.removeNeighbor(edge);

@@ -192,7 +192,6 @@ iterations on both the children and the neighbors.
 INLINE void Node::resetIterations()
 { children.beginIteration(); neighbors.beginIteration(); }
 @ %def resetIterations
-
 The opposite of adding a child is spliting off a sub-tree by removing
 a node from its parent.  This is quite straightforward: remove the
 parent edge of the node from its parent's list of children, and 
@@ -337,7 +336,7 @@ NodePtr Node::rehangWeak()
 
     return oldRoot;
 }
-@ %def rehang
+@ %def rehangWeak
 
 In addition to the tree structure and a Node's neighbors, we need
 to build a linked list of nodes for use by the solver.  This
@@ -350,7 +349,7 @@ element in the list.
 <<default Node constructor>>=
     nextNode = nil;
     next2 = nil;
-@ %def nextNode
+@ %def nextNode next2
 We need to be able to set it to [[nil]] or another value.
 <<Node methods>>=
     void setNextNil();
