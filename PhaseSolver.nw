@@ -4,7 +4,7 @@ this includes the nodes and edges.  These are stored as contiguous
 arrays (as opposed to allocating each one individually with [[new]])
 to make memory management fast and simple.  These arrays are allocated
 when the problem instance is read.
-<<Solver data>>=
+<<Solver protected memebers>>=
     Node*	nodes;
     Edge*	edges;
 @ %def nodes edges
@@ -14,7 +14,7 @@ when the problem instance is read.
 @ 
 Just for safety checking, we should also keep track of the
 number of elements in each of these arrays.
-<<Solver data>>=
+<<Solver protected memebers>>=
     int		numNodes;
     int		numEdges;
 <<default Solver constructor>>=
@@ -26,7 +26,7 @@ We also need to know the source and sink nodes in the graph.
     NodePtr 	sinkNode;
 <<default Solver constructor>>=
     sourceNode = sinkNode = nil;
-@ %def sourceNode sinkNode
+@ %def sourceNode sinNode
 
 At the highest level, solving is pretty simple: we select the
 lowest labeled strong branch, process it looking for mergers and 
@@ -95,7 +95,7 @@ and terminate early.  It might still be invoked as a side-effect of
 some initialization or normalization schemes - especially if we
 queue a branch with $\ell = 1$, the initial value for weak nodes.
 <<Solver methods>>=
-    void processBranch(Node& root);
+    virtual void processBranch(Node& root);
 <<Solver method implementations>>=
 void PhaseSolver::processBranch(Node& root)
 {
@@ -181,8 +181,7 @@ won't try to merge.}
 	if ((neighbor.getLabel() == (label - 1)) &&
 	    (neighborEdge.residCapacity(node) > 0))
 	{
-	    //merge(node, neighbor, neighborEdge);
-	    (this->*mergeFunc)(node, neighbor, neighborEdge);
+	    merge(node, neighbor, neighborEdge);
 	    return TRUE;
 	}
 	node.advanceNeighbors();
@@ -239,28 +238,14 @@ void PhaseSolver::relabelSubtree(Node& node)
 }
 @ %def relabelSubtree
 \subsection{Basic Merger Functions}
-We support two types of merger functions: normal and simplex
-(described later).  We use a pointer to member function to select
-the merger function.
-<<Solver data>>=
-    MergePtr mergeFunc;
-<<default Solver constructor>>=
-    mergeFunc = &PhaseSolver::merge;
-@ %def mergeFunc
-<<Solver methods>>=
-    void setMergeFunc(MergePtr func);
-<<Solver method implementations>>=
-void PhaseSolver::setMergeFunc(MergePtr func)
-{ mergeFunc = func; }
-@ %def setMergeFunc
-The normal function 
+The normal merger function 
 rehangs the strong branch from the strong node, adds the
 merger arc from $s$ to $w$, and renormalizes the tree by
 pushing the excess from the old strong root towards the weak root.  
 There are different possible policies for renormalizing the tree
 after a merger, so we use a pointer to function as an indirection.
 <<Solver methods>>=
-    void merge(Node& strong, Node& weak, Edge& edge);
+    virtual void merge(Node& strong, Node& weak, Edge& edge);
 <<Solver method implementations>>=
 void PhaseSolver::merge(Node& strong, Node& weak, Edge& edge)
 {
@@ -537,41 +522,60 @@ by some sort of heap.
 Adding a branch just requires finding the bucket based on the branch's
 label, and inserting it into the list.  
 <<Solver methods>>=
-    void addStrongBranch(Node& root);
-<<Solver inline implementations>>=
-INLINE void PhaseSolver::addStrongBranch(Node& root)
+    virtual void addStrongBranch(Node& root);
+<<Solver method implementations>>=
+void PhaseSolver::addStrongBranch(Node& root)
 {
-    assert(isStrongNode(root));
+    assert((root.getParentNode() == nil) && (root.getExcess() >= 0));
     CHECK_TREE(root, nil);
     NodeLabel label = root.getLabel();
 
-    <<check if root is already in the tree>>
-
-    // actually add the branch
-    (this->*addBranchFunc)(root);
-
-    // look for new lowest label
-    if (label < lowestLabel) {
-	lowestLabel = label;
+    if (branchInBucket(root) == FALSE) {
+	// actually add the branch
+	(this->*addBranchFunc)(root);
+	checkLowestLabel(label);
     }
 }
 @ %def addStrongBranch
-This is a little tricky because we don't have a flag that to tell
+Determining if a branch is already in a bucket
+is a little tricky because we don't have a flag that to tell
 us directly if the branch is already in the bucket.  Instead, we
 will just look at the [[next]] pointer.  If the pointer is non-null,
 then it must already be in a bucket.  However, the pointer might
 be null if it's the last node in the bucket, so we have to check
 for that too.  If it is in the bucket, we'll check its label against
 the label of the nodes already in the bucket.
-<<check if root is already in the tree>>=
-    if ((root.getNext() != nil) || 
-        (buckets[label].getTail() == &root))
+<<Solver methods>>=
+    Boolean branchInBucket(Node& root);
+<<Solver inline implementations>>=
+INLINE Boolean PhaseSolver::branchInBucket(Node& root)
+{
+    Boolean result = FALSE;
+    if ((root.getNext() != nil) ||  
+        (buckets[root.getLabel()].getTail() == &root))
     {
-	assert(buckets[label].getHead()->getLabel() == root.getLabel());
-	return;
+	result = TRUE;
+	assert(
+	    (buckets[root.getLabel()].getHead()->getLabel() == root.getLabel())
+	    || (buckets[root.getLabel()].getHead()->getParentNode() != nil)
+	);
     }
 
-<<Solver data>>=
+    return result;
+}
+@ %def branchInBucket
+We keep track of the lowest label every time a new branch is put
+in a bucket.
+<<Solver methods>>=
+    void checkLowestLabel(NodeLabel label);
+<<Solver inline implementations>>=
+INLINE void PhaseSolver::checkLowestLabel(NodeLabel label)
+{
+    if (label < lowestLabel) {
+	lowestLabel = label;
+    }
+}
+<<Solver protected memebers>>=
     AddBranchPtr addBranchFunc;
 <<default Solver constructor>>=
     addBranchFunc = &PhaseSolver::addBranchLifo;
@@ -580,7 +584,6 @@ the label of the nodes already in the bucket.
     void addBranchFifo(Node& root);
     void addBranchLifo(Node& root);
     void addBranchWave(Node& root);
-
 <<Solver method implementations>>=
 void PhaseSolver::addBranchFifo(Node& root)
 {
@@ -608,11 +611,12 @@ void PhaseSolver::addBranchWave(Node& root)
 	buckets[root.getLabel()].insertTail(root);
     }
 }
-<<Solver data>>=
+@ The last branch root returned by [[getLowestBranch]].
+<<Solver protected memebers>>=
     NodePtr lastRoot;
 <<default Solver constructor>>=
     lastRoot = nil;
-@ 
+@ %def lastRoot
 As the algorithm runs, we need to remove the lowest labeled branch.
 First we need to locate the lowest labeled bucket, then we need to
 remove the head of the list.  If there are no more strong branches,
@@ -621,17 +625,15 @@ we just return [[nil]].
 The search always starts at the [[lowestLabel]] bucket.  As we
 scan buckets, we increment [[lowestLabel]] until we find a 
 non-empty bucket.
-{\em What exactly should the termination condition be?}
-<<Solver methods>>=
-    NodePtr getLowestBranch();
-<<Solver method implementations>>=
-NodePtr PhaseSolver::getLowestBranch()
+<<Solver protected memebers>>=
+    NodePtr getLowestBucket();
+<<Solver inline implementations>>=
+INLINE NodePtr PhaseSolver::getLowestBucket()
 {
     NodePtr result = nil;
     while (lowestLabel < numNodes) {
 	result = buckets[lowestLabel].removeHead();
 	if (result != nil) {
-	    assert(result->getLabel() == lowestLabel);
 	    result->setNextNil();
 	    break;
 	} else {
@@ -640,6 +642,19 @@ NodePtr PhaseSolver::getLowestBranch()
     }
 
     lastRoot = result;
+    return result;
+}
+@ %def getLowestBucket
+The above method does the real work, but we have a virtual 
+wrapper function to allow us to modify the behavior for the
+Simplex solver.  Here in the base class, we just check the label.
+<<Solver methods>>=
+    virtual NodePtr getLowestBranch();
+<<Solver method implementations>>=
+NodePtr PhaseSolver::getLowestBranch()
+{
+    NodePtr result = getLowestBucket();
+    assert(result->getLabel() == lowestLabel);
     return result;
 }
 @ %def getLowestBranch
@@ -820,17 +835,30 @@ compilicated, of course.
 
 \subsection{Simplex Merger}
 Another, more involved method of solving is using a `simplex-style'
-merger function.  The simplex merger avoids multiple splits in the
-strong branch by computing the bottleneck capacity along the cycle
+merger function.  The simplex merger avoids multiple splits during
+the merger computing the bottleneck capacity along the cycle
 from the strong root, through the merger arc, and up to the weak
 root.  We only push excess equal to this bottleneck capacity, so
 there will be at most one split during the merger, in most cases
-the strong root will still be strong.  Note that due to the complexity
+the strong root will remain strong.  Note that due to the complexity
 of all of this, we do not support delayed normalization.
-<<Solver methods>>=
-    void simplexMerge(Node& strong, Node& weak, Edge& edge);
-<<Solver method implementations>>=
-void PhaseSolver::simplexMerge(Node& strong, Node& weak, Edge& edge)
+
+As we shall see, this is a pretty significant deviation from the
+code we have develeoped above, we will implement this  as a sub-class
+of [[PhaseSolver]] rather than relying on tricks with pointers to
+functions.
+<<Simplex declaration>>=
+class SimplexSolver : public PhaseSolver
+{
+    public: <<Simplex public declarations>>
+    private: <<Simplex private declarations>>
+};
+@ %def SimplexSolver
+\subsubsection{Simplex merge function}
+<<Simplex public declarations>>=
+    virtual void merge(Node& strong, Node& weak, Edge& edge);
+<<Simplex implementations>>=
+void SimplexSolver::merge(Node& strong, Node& weak, Edge& edge)
 {
     TRACE( trout << "simplexMerge " << strong.getId() << " ("
 		   << strong.getRootExcess() << ") to " 
@@ -840,6 +868,11 @@ void PhaseSolver::simplexMerge(Node& strong, Node& weak, Edge& edge)
 		   << edge.residCapacity(strong) << ", s-label "
 		   << strong.getLabel() << endl;)
 
+    <<simplex merge function>>
+}
+@ %def merge
+Compute the bottleneck capacity in the strong and weak branches.
+<<simplex merge function>>=
     FlowAmount strongCapacity, weakCapacity;
     NodePtr strongChild, weakChild;
     Node& strongRoot = findBottleneckArc(strong, TRUE, strongCapacity, strongChild);
@@ -849,12 +882,30 @@ void PhaseSolver::simplexMerge(Node& strong, Node& weak, Edge& edge)
     TRACE( trout << "strongCapacity=" << strongCapacity <<
                     ", mergerCapacity=" << mergerCapacity <<
 		    ", weakCapacity=" << weakCapacity << endl;);
-
-    if ((excess < strongCapacity) && (excess < mergerCapacity) && 
+@
+First, let's address a special case that seems to come up a lot
+with simplex: zero-excess root.  Initially, we used to filter them
+out via [[getLowestBranch]] and [[addStrongBranch]], but that leads
+to weak branches with roots that have label greater than one.
+Therefore, we'll just merge it to a weak branch without worrying 
+about pushing any flow around.
+<<simplex merge function>>=
+    if (excess == 0) {
+	<<fix degenerate flags for whole strong branch>>
+	strong.rehangWeak();
+	weak.addChild(strong, edge);
+	CHECK_TREE(weakRoot, nil);
+    }
+@
+Figure out where the bottleneck is.  If there is less excess than
+the bottlenck, we will just perform a normal merger.
+<<simplex merge function>>=
+    else if ((excess < strongCapacity) && (excess < mergerCapacity) && 
         (excess < weakCapacity))
     {
 	// normal merger without splits
-	merge(strong, weak, edge);
+	<<fix degenerate flags for whole strong branch>>
+	mergeStrongBranch(strong, weak, edge);
     } else if ((strongCapacity <= mergerCapacity) && 
                (strongCapacity <= weakCapacity))
     {
@@ -866,36 +917,36 @@ void PhaseSolver::simplexMerge(Node& strong, Node& weak, Edge& edge)
     } else {
 	<<weak side bottleneck>>
     }
-}
-@ %def simplexMerge
-
+@
 $\bullet$ If the bottleneck is on the strong side, we need to pull as much flow
 down from the strong root as possible (i.e. the bottleneck capacity).
 <<strong side bottleneck>>=
     assert(strongChild != nil);
     assert(strongChild->getParentDownCapacity() == strongCapacity);
-
     pullFromRoot(*strongChild, strongCapacity);
     assert(strongChild->getExcess() == strongCapacity);
+    NodePtr newRoot = findNewRoot(strongRoot, *strongChild);
     strongChild->split();
     CHECK_TREE(strongRoot, nil);
-@ The strong root may still be strong because we only took some of
-the excess.  However, it is also possible that we took all of the
-excess, in which case the strong root has zero deficit.
-We need to put it back in the buckets if needed.  
+@ We need to fix up the degenerate branch flags, which will
+be explained later.
 <<strong side bottleneck>>=
-    if (strongRoot.getExcess() > 0 || zeroDeficitIsStrong) {
-	addStrongBranch(strongRoot);
+    <<fix degenerate flags in strong branch>>
+@ The call above to [[findNewRoot]] computes which node, if any,
+from the strong branch needs to be re-inserted in the buckets.
+<<strong side bottleneck>>=
+    if (newRoot != nil) {
+	addStrongBranch(*newRoot);
     }
 @ The remaining fragment of the strong branch can be merged with
-the weak node, and we can will let [[merge]] push from the 
-child node (which is now the root of the fragment) all the way 
-up to the weak root.
+the weak node, and we can will let our variant of [[merge]] in the 
+base class push from the child node (which is now the root of 
+the fragment) all the way up to the weak root.
 <<strong side bottleneck>>=
-    merge(strong, weak, edge);
+    mergeStrongBranch(strong, weak, edge);
 @
 $\bullet$ When the merger arc is the bottleneck, the processing 
-is very similar except that
+is similar except that
 we don't have to merge a fragment of the strong branch to the weak
 branch.  We pull down as much flow as we can to the strong node. 
 <<merger arc bottleneck>>=
@@ -908,12 +959,14 @@ branch.  We pull down as much flow as we can to the strong node.
     strong.decrementExcess(mergerCapacity);
     weak.incrementExcess(mergerCapacity);
     CHECK_TREE(strongRoot, nil);
-@ Then we perform a weak push (which won't split), and 
-re-insert the strong branch if needed.
+@ Then we insert the last strong root and
+perform a weak push (which won't split).
+We know that the last root is the correct branch to insert (instead
+of calling [[findNewRoot]]) because the merger is happening at or
+below the last root, and it's still strong because the merger arc
+is the bottleneck.
 <<merger arc bottleneck>>=
-    if (strongRoot.getExcess() > 0 || zeroDeficitIsStrong) {
-	addStrongBranch(strongRoot);
-    }
+    addStrongBranch(*lastRoot);
     weakPush(weak);
     CHECK_TREE(weakRoot, nil);
 @
@@ -936,11 +989,13 @@ side of the tree.
     weak.incrementExcess(weakCapacity);
     strongPush(weak, *weakChild);
 @ Now, we push the flow across the bottleneck arc, which we can just use
-[[pushToParent]] for and let it handle the splitting of the arc.
+[[pushToParent]] since the pointers parent-child relationship is
+correct.  However, we still need to split ourselves.
 <<weak side bottleneck>>=
     NodePtr weakParent = weakChild->getParentNode();
     assert(weakParent != nil);
-    weakChild->pushToParent(); 		// will split
+    weakChild->pushToParent();
+    weakChild->split();
     assert(weakChild->getExcess() == 0);
 @ At this point, we have excess in the amount of the bottleneck capacity
 sitting on the weak parent node, so we can easily push it up to
@@ -954,12 +1009,353 @@ that the branch becomes strong.
 to [[weakChild]] needs to be rehung and attached under the strong node.
 And then the strong node needs to be re-inserted into the strong buckets.
 <<weak side bottleneck>>=
-    weak.rehang(FALSE);
-    strong.addChild(weak, edge);
+    weak.rehangWeak();
+    strong.addWeakChild(weak, edge);
+    <<set degenerate flags in weak branch>>
     CHECK_TREE(strongRoot, nil);
-    addStrongBranch(strongRoot);
+    addStrongBranch(*lastRoot);
 @ 
+In the code above, we used to call the base class [[merge]] function
+to merge part or all of the strong branch to the weak branch.  
+However this causes problems when we've been dealing with degenerate
+branches.  In the base class, we only rehang trees in the strong
+branch, so we can exploit the `current element' in the children
+arrays to speed rehanging and subsequent searches of the strong
+branches.  With degenerate branches, this breaks down.  
 
+Therefore, we have a copy of the base class merge function with
+different calls to tree manipulation functions.  Also, we 
+hard-code the renomalization function to renormalize the whole tree.
+<<Simplex public declarations>>=
+    void mergeStrongBranch(Node& strong, Node& weak, Edge& edge);
+<<Simplex implementations>>=
+void SimplexSolver::mergeStrongBranch(Node& strong, Node& weak, Edge& edge)
+{
+    Node& strongRoot = *strong.rehangWeak();
+    weak.addChild(strong, edge);
+    CHECK_TREE(*weak.getRoot(), nil);
+    // renormalize the tree
+    fullRenormalize(strongRoot, weak);
+}
+@ %def mergeStrongBranch
+\subsubsection{Degenerate branches}
+\label{degenerate-branches}
+The code above for the three classes of mergers looks 
+plausible, but there
+is a serious problem during a merger when the bottleneck is on
+the weak side.  Suppose during phase $\ell$, the strong node
+is $s$, the weak node is $w$, and the bottleneck arc is $(u,v)$,
+where $u$ is closest to $w$.  We want to suspend the fragment of
+the weak branch below the bottleneck from $w$, and attach it to
+the strong node, $s$, via the merger arc.  This violates the
+monotoicity of paths from the strong root because we know that $w$
+has label $\ell - 1$, while $s$ has label $\ell$.  The other weak
+nodes have labels less than or equal to $\ell - 1$.
+
+In terms of algorithmic complexity, this violation of 
+monotonicity is not a
+problem on the strong side, but it is a problem in our implementation
+because we count on being able to begin scanning a strong branch
+(during phase $\ell$) from the root and knowing that labels only
+increase with depth so that when we encounter a node with a higher
+label (say $\ell + 1$), we can stop scanning that sub-tree during
+phase $\ell$.
+
+We will accomodate this by introducing the concept of {\em degenerate
+sub-trees}.  After a simplex merger with the bottleneck arc in the
+weak branch, we rehang the weak fragment from $w$ and attach it to
+$s$.  We call this branch `degenerate' because we know that the
+label monotoicity has been violated.  A merger that creates a
+degenerate branch is also called degenerate.  We know that all the
+nodes along the path from $w$ to $u$ have labels less than $\ell$
+that are monotically decreasng.  There may also be descendent nodes
+of the nodes along the path with labels less than $\ell$, but they
+will maintain monotonicity within their local sub-trees.
+
+We need to process these nodes and their descendents before we
+process any of the nodes with label $\ell$ again.  (Note that all
+nodes along the path from $s$ up to the strong root have label
+$\ell$ because we were in phase $\ell$ at the time of the merger.)
+
+We process these nodes from the leaf node, $u$, up long the path
+of parent pointers until we get back to $s$.  As we process each
+of these nodes and their children, we will be either merging or
+relabeling the nodes.  If we reach $s$ without merging, we will
+know that all nodes below $s$ have label $\ell$ or more because
+when we cannot find a merger for a node, we increment its label.
+At this point, monotonicity has been restored (it is no longer
+degenerate) and we can place the branch into a strong bucket to
+continue processing during phase $\ell$.
+
+To accomplish this, we will treat each node along the path
+from the weak child up to the weak node as the root of a 
+strong branch.  We can process these sub-trees to yield
+mergers or increase the label.
+
+This is the final step in the merger code with the bottleneck
+in the weak branch.
+Although we could do this inline (especially with the aid
+of [[noweb]], we will use a separate function so that we
+can profile the performance of this function.
+<<set degenerate flags in weak branch>>=
+    queueDegeneratePath(*weakChild, weak);
+<<Simplex private declarations>>=
+    void queueDegeneratePath(Node& first, Node&last);
+@
+This function will involve tracing up the path from the
+first node to the last node adding each node as a new
+strong root.  
+<<Simplex implementations>>=
+void SimplexSolver::queueDegeneratePath(Node& first, Node& last)
+{
+    NodePtr currNode = &first;
+    while (currNode != &last) {
+	addDegenerateBranch(*currNode);
+	currNode = currNode->getParentNode();
+    }
+    addDegenerateBranch(last);
+}
+@ %def queueDegneratePath
+Adding degenerate branches is similar to [[addStrongBranch]]
+except that the assumptions are very different - e.g. we're not
+dealing with root nodes, and a degenerate branch better not 
+already be in a bucket.  Furthermore, we want to mark degenerate
+nodes to keep track of them if they get merged to a weak branch.
+One subtle, yet significant difference is that we always want to
+add degenerate roots to the tail of the bucket.  This way if
+a node and its parent both have the same label, we will process
+the child before the parent - i.e. move up along the path
+towards the original strong node.
+<<Simplex private declarations>>=
+    void addDegenerateBranch(Node& root);
+<<Simplex implementations>>=
+void SimplexSolver::addDegenerateBranch(Node& root)
+{
+    assert(isStrongNode(root) == FALSE);
+    NodeLabel label = root.getLabel();
+    assert(root.getNext() == nil);
+
+    // mark the branch and add it
+    assert(root.flag == 0);
+    root.setFlag(DEGENERATE_SUBTREE);
+    CHECK_TREE(root, root.getParentEdge());
+    addBranchFifo(root);
+
+    checkLowestLabel(label);
+}
+@ %def addDegenerateBranch
+<<Simplex private declarations>>=
+    static const int DEGENERATE_SUBTREE = 4;
+@ %def DEGENERATE_SUBTREE
+So, now that we have degenerate branches in the buckets, we need
+to deal with them.  The first issue is getting them out.  The 
+problem is that between the time we added a degenerate node and
+when we find it as a strong root, there might have been a merger
+that `demoted' it to weak.  In this case, we need to ignore it
+and continue looking.
+
+One subtle case to be aware of is when we queue the degenerate branch,
+we queue the root of the entire branch as well as the degenerate
+nodes along the path below [[strong]].  If there is a subsequent merger
+where there is no bottleneck, the entire strong branch will be
+rehung and made weak.  The root for the entire strong branch will
+still be in its bucket.  However, now it will no longer be a root,
+so we will know to ignore it.
+<<Simplex public declarations>>=
+    virtual NodePtr getLowestBranch();
+<<Simplex implementations>>=
+NodePtr SimplexSolver::getLowestBranch()
+{
+    NodePtr result = getLowestBucket();
+    while (result != nil) {
+	if (result->isRootNode()) {
+	    // a normal strong root - may have zero exess
+	    break;
+	} else if (result->flagIsSet(DEGENERATE_SUBTREE)) {
+	    // found a degenerate root that is still strong
+	    break;
+	}
+	result = getLowestBucket();
+    }
+
+    return result;
+}
+@ %def getLowestBranch
+Once we get the lowest labeled branch, we will need to process it.
+This is basically the same as we do in the base class, except that
+we want to keep an eye out for degenerate sub-trees.  After we
+process on of these, if there were no mergers (i.e. it was relabeled),
+we do not want to put it back in the bucket because we know its
+monotonicity has been restored.
+<<Simplex public declarations>>=
+    virtual void processBranch(Node& root);
+<<Simplex implementations>>=
+void SimplexSolver::processBranch(Node& root)
+{
+    degenerateBranch = root.flagIsSet(DEGENERATE_SUBTREE);
+
+    if (labelCount[root.getLabel() - 1] == 0) {
+	TRACE( trout << "Relabel branch " << root.getId() 
+	             << " with label " << root.getLabel() << endl; )
+	relabelSubtree(root);
+	if (degenerateBranch) {
+	    root.clearFlag(DEGENERATE_SUBTREE);
+	} else {
+	    addStrongBranch(root);	
+	}
+    } else {
+	Boolean performedMerger = processSubtree(root);
+	if (!performedMerger) {
+	    if (degenerateBranch) {
+		root.clearFlag(DEGENERATE_SUBTREE);
+	    } else {
+		addStrongBranch(root);	
+	    }
+	}
+    }
+    validateDegenerateBranches();
+}
+<<Simplex private declarations>>=
+    Boolean degenerateBranch;
+@ %def processBranch
+The code above creates degenerate branches during mergers with
+wthe bottleneck in the weak branch.  One tricky complication
+is if we have a merger from a degenerate branch where the 
+bottleneck arc is within the strong, degenerate branch, some
+of the nodes we flagged and put into buckets could become
+weak.  In which case, we no longer want to process them as
+strong branches.
+
+Rather than digging through the buckets trying to pull these nodes
+out, we will simply clear their degnerate flag.  We will do
+this after the bottleneck arc has been saturated but before the
+strong branch has been merged and rehung.  Therefore, we want to
+trace the path from [[strong]] up to [[strongChild]] clearing
+the degenerate flag.
+({\em We could be a tad more efficient about this because we
+know that the degenerate nodes will be contiguous along the
+path, but there might be some non-degenerate nodes at the
+begining of the path.  We could quit looking upon reaching the
+end of the degenerate portion of the path.})
+<<fix degenerate flags in strong branch>>=
+    if (degenerateBranch) {
+	strong.clearFlagPath(DEGENERATE_SUBTREE, strongChild);
+    }
+@ Similarly, when there is no bottleneck arc, and the entire 
+strong branch becomes weak, we need to clear the degenerate
+flags for the whole path from the strong merger node up to
+the strong root.  We do this before performing the merger, so
+[[strong]] is at the bottom of the path and [[strongRoot]] is
+at the top.
+<<fix degenerate flags for whole strong branch>>=
+    if (degenerateBranch) {
+	strong.clearFlagPath(DEGENERATE_SUBTREE, nil);
+    }
+@
+In addition to tweaking the degenerate flags in the strong branch,
+we need to figure out what node to queue in a bucket as a strong
+root.  This is non-trivial to figure out because need to to
+figure out where the breakpoint arc is in relation to the node
+that we began processing via [[processBranch]].
+We assume that this is being invoked before the strong branch
+has been split at the bottleneck arc.
+<<Simplex public declarations>>=
+    NodePtr findNewRoot(Node& strongRoot, Node& strongChild);
+<<Simplex implementations>>=
+NodePtr SimplexSolver::findNewRoot(Node& strongRoot, Node& strongChild)
+{
+    <<find new root>>
+}
+@ %def findNewRoot
+If our search started at the strong root, we know we were processing 
+a non-degenerate branch and that the strong root is where to continue
+the search.  
+<<find new root>>=
+    if (lastRoot == &strongRoot) {
+	return &strongRoot;
+    }
+@ If we started our search at the strong child, the we want to
+contine the search at the parent (if its degenerate) or the root
+of the branch (if its not).  However, both of these nodes should 
+already be in a bucket from [[queueDegeneratePath]] or plain old
+[[addStrongBranch]] for the root of a degenerate branch.  In this
+case, we return [[nil]] to signal that no branch needs to be
+queued.
+<<find new root>>=
+    if (lastRoot == &strongChild) {
+	return nil;
+    }
+@ With those easy cases out of the way, we need to scan up from
+the the last root searching for the bottleneck arc (actually
+the parent node above the arc).  
+If we don't find the arc, then we'll continue from the last
+root.  Otherwise, it depends if the parent node is degenerate or not.
+<<find new root>>=
+    NodePtr result = lastRoot;
+    NodePtr parent = strongChild.getParentNode();
+    NodePtr currNode = lastRoot->getParentNode();
+    while (currNode != nil) {
+	if (currNode == parent) {
+	    if (currNode->flagIsSet(DEGENERATE_SUBTREE)) {
+		if (branchInBucket(*currNode)) {
+		    result = nil;
+		} else {
+		    result = currNode;
+		    TRACE( trout << "Found degenerate branch root that "
+				    "is not already in bucket: " 
+				 << result->getId() << endl; );
+		}
+		break;
+	    } else {
+		result = &strongRoot;
+		break;
+	    }
+	}
+	currNode = currNode->getParentNode();
+    }
+
+    return result;
+@
+Since it seems that we are implementing special versions of just
+about every method that touches branches, let's add a new
+version of [[addStrongBranch]].  This is mostly to verify the
+conditions that we expect to hold for the Simlex version - basically
+keeping an eye on degenerate branches.
+<<Simplex public declarations>>=
+    virtual void addStrongBranch(Node& root);
+<<Simplex implementations>>=
+void SimplexSolver::addStrongBranch(Node& root)
+{
+    NodeExcess excess = root.getExcess();
+    if (excess > 0) {
+	assert(root.flagIsSet(DEGENERATE_SUBTREE) == FALSE);
+	PhaseSolver::addStrongBranch(root);
+    } else {
+	assert(excess == 0);
+	if (root.getParentNode() != nil) {
+	    assert(root.flagIsSet(DEGENERATE_SUBTREE));
+	    <<re-insert a degenerate branch>>
+	} else {
+	    TRACE( trout << "Adding strong branch with zero excess: " 
+			 << root.getId() << endl; );
+	    PhaseSolver::addStrongBranch(root);
+	}
+    }
+}
+@ %def addStrongBranch
+We need to be careful how we queue degenerate branches here.  They
+are inserted in FIFO order for the first time in [[addDegenerateBranch]].
+However, if this function is called to queue one, it must be from
+the Simplex [[merge]] function, so we must be requeing a branch.
+Therefore, we want to add it to the head of the list (i.e. LIFO)
+so that it can be discharged before its parent, if the parent has
+the same label.
+<<re-insert a degenerate branch>>=
+    assert(root.getNext() == nil);
+    addBranchLifo(root);
+    checkLowestLabel(root.getLabel());
+@
+\subsubsection{Utility functions}
 The code above uses a method to find the bottleneck arc 
 within the a branch.  The bottleneck capacity is the downwards
 capacity in the strong branch and the upwards capacity in the 
@@ -970,14 +1366,15 @@ is the parent arc of the child node that is returned.
 If the node is a root (i.e. has no parent), the bottleneck capacity 
 will be [[MAXINT]] and the bottleneck child will be [[nil]].
 If there are multiple arcs along the path with the same bottleneck
-capacity, we will return the one closest to the root.
-<<Solver methods>>=
+capacity, we will return the one closest to the root of a strong
+branch or the further one in a weak branch.
+<<Simplex private declarations>>=
     Node& findBottleneckArc(Node& node, 
 			    Boolean isStrong,
 			    FlowAmount& bottleneckCap, 
 			    NodePtr& bottleneckChild);
-<<Solver method implementations>>=
-Node& PhaseSolver::findBottleneckArc(Node& node, 
+<<Simplex implementations>>=
+Node& SimplexSolver::findBottleneckArc(Node& node, 
 				     Boolean isStrong,
 				     FlowAmount& bottleneckCap, 
 				     NodePtr& bottleneckChild)
@@ -989,11 +1386,18 @@ Node& PhaseSolver::findBottleneckArc(Node& node,
 
     while (parentEdge != nil) {
 	NodePtr parentNode = parentEdge->getOtherNode(currNode);
-	FlowAmount res = parentEdge->residCapacity(isStrong ? 
-	                                           *parentNode : *currNode);
-	if (res <= bottleneckCap) {
-	    bottleneckCap = res;
-	    bottleneckChild = currNode;
+	if (isStrong) {
+	    FlowAmount res = parentEdge->residCapacity(*parentNode);
+	    if (res <= bottleneckCap) {
+		bottleneckCap = res;
+		bottleneckChild = currNode;
+	    }
+	} else {
+	    FlowAmount res = parentEdge->residCapacity(*currNode);
+	    if (res < bottleneckCap) {
+		bottleneckCap = res;
+		bottleneckChild = currNode;
+	    }
 	}
 
 	currNode = parentNode;
@@ -1009,13 +1413,18 @@ from the root down to a node.  This requires that there be sufficient
 capacity in the reverse direction in each arc along the path.
 The flow on each arc will be adjusted to reflect the flow that we
 are pulling down.  
-<<Solver methods>>=
+<<Simplex private declarations>>=
     void pullFromRoot(Node& node, FlowAmount amount);
-<<Solver method implementations>>=
-void PhaseSolver::pullFromRoot(Node& node, FlowAmount amount)
+<<Simplex implementations>>=
+void SimplexSolver::pullFromRoot(Node& node, FlowAmount amount)
 {
     NodePtr currNode = &node;
     EdgePtr parentEdge = node.getParentEdge();
+
+    if (amount == 0) {
+	TRACE( trout << "Pull zero flow from root to " << node.getId() << endl; );
+	return;
+    }
     if (parentEdge == nil) {
 	// node is a root - the excess is already here: nothing to do
 	return;
@@ -1023,8 +1432,7 @@ void PhaseSolver::pullFromRoot(Node& node, FlowAmount amount)
 
     while (parentEdge != nil) {
 	Node& parentNode = *parentEdge->getOtherNode(currNode);
-	assert((parentEdge->residCapacity(parentNode) > amount) ||
-	       (currNode == &node) && (parentEdge->residCapacity(parentNode)));
+	assert(parentEdge->residCapacity(parentNode) >= amount);
 	parentEdge->decreaseFlow(amount);
 	currNode = &parentNode;
 	parentEdge = parentNode.getParentEdge();
@@ -1040,6 +1448,33 @@ will increase.
     currNode->decrementExcess(amount);
     node.incrementExcess(amount);
 @
+Here is a debug function that validates the queues of degenerate
+branches.
+<<Simplex private declarations>>=
+    void validateDegenerateBranches();
+<<Simplex implementations>>=
+void SimplexSolver::validateDegenerateBranches()
+{
+    for (int i = 1; i <= numNodes; i++) {
+	Node& node = nodes[i];
+	if (node.flagIsSet(DEGENERATE_SUBTREE)) {
+	    assert(branchInBucket(node));
+	    // look for same-label parent in same bucket
+	    NodePtr parent = node.getParentNode();
+	    assert(parent != nil);
+	    if ((parent->getLabel() == node.getLabel()) &&
+	        (parent->flagIsSet(DEGENERATE_SUBTREE)))
+	    {
+		NodePtr currNode = node.getNext();
+		while (currNode != parent) {
+		    assert(currNode != nil);
+		    currNode = currNode->getNext();
+		}
+	    }
+	}
+    }
+}
+@ %def validateDegenerateBranches
 \subsection{Establishing an Initial Normalized Tree}
 There are a number of different ways that we can build an initial,
 normalized tree.  Building the initial tree is totally independent
@@ -1124,7 +1559,7 @@ void PhaseSolver::setInitialNodeStatus()
     }
 }
 @ %def setInitialNodeStatus
-<<Solver data>>=
+<<Solver protected memebers>>=
     int* labelCount;
 <<default Solver constructor>>=
     labelCount = nil;
@@ -1309,7 +1744,7 @@ void PhaseSolver::buildGreedyPathTree()
 <<Solver methods>>=
     Boolean splittingPathPush(Node& node, int remainingSplits);
 <<Solver method implementations>>=
-Boolean PhaseSolver::splittingPathPush(Node& node, int remainingSplits)
+Boolean PhaseSolver::splittingPathPush(Node& /*node*/, int /*remainingSplits*/)
 {
     Boolean foundSink = FALSE;
     /*
@@ -1685,6 +2120,10 @@ not show up in the function call traces of the profiler.
 #undef INLINE 
 #endif /*INLINE_SOLVER*/
 @
+Now, we'll add the simplex solver methods.
+<<*>>=
+    <<Simplex implementations>>
+@
 The header defines the [[Solver]] class, its member functions, member
 data, and inline functions.  Again, we have more boiler-plate.
 <<header>>=
@@ -1707,6 +2146,8 @@ public:
     <<Solver methods>>
     <<C++ overhead>>
     <<public Solver data>>
+protected:
+<<Solver protected memebers>>
 private:
     <<Solver data>>
 };
@@ -1729,6 +2170,9 @@ class NodeBucket
     <<Node Bucket methods>>
     <<Node Bucket data>>
 };
-
 <<Node Bucket inline implementations>>
+@
+We can also add the simplex solver class.
+<<header>>=
+    <<Simplex declaration>>
 
