@@ -201,6 +201,9 @@ and that generates a merger we return immediately.
     while (node.hasMoreChildren()) {
 	Node& child = node.getCurrentChild();
 	assert(child.getLabel() >= label);
+	if (node.minChildLabel > child.getLabel()) {
+	    node.minChildLabel = child.getLabel();
+	}
 	if (child.getLabel() == label) {
 	    Boolean performedMerger = processSubtree(child);
 	    if (performedMerger) {
@@ -257,15 +260,8 @@ we'd like to increase it by more, up to its distance.
 <<increase node label>>=
     // maybe move to a separate chunk with #ifdefs
     if (node.distance > 0) {
-	NodeLabel newLabel = max(label + 1, node.distance);
-	if (node.getNumChildren() >= 0) {
-	    // else scan children
-	    ElIterator it = node.getChildren();
-	    for (EdgePtr edge = it.getNext(); edge != nil; edge=it.getNext()) {
-		newLabel = min(edge->getOtherNode(&node)->getLabel(), newLabel);
-	    }
-	    assert(newLabel > label);
-	}
+	NodeLabel newLabel = min(node.distance, node.minChildLabel);
+	newLabel = max(newLabel, label + 1);
 	setLabel(node, newLabel);
 	STATS(numRelabels++);
 	STATS(if ((newLabel - label) > 1) numLabelSkips++; );
@@ -315,6 +311,7 @@ INLINE void PhaseSolver::incrementLabel(Node& node)
 #endif /* COUNT_LABELS */
     node.incrementLabel();
     node.resetIterations();
+    node.minChildLabel = max(node.distance, node.getLabel()); // move to resetIterations?
     STATS(numRelabels++);
 }
 @ %def incrementLabel
@@ -326,6 +323,7 @@ this.  We also reset the iterations.
 <<Solver inline implementations>>=
 INLINE void PhaseSolver::setLabel(Node& node, NodeLabel newLabel)
 {
+    assert(newLabel > node.getLabel());
 #ifdef  COUNT_LABELS 
     labelCount[node.getLabel()]--;
     labelCount[newLabel]++;
@@ -334,6 +332,7 @@ INLINE void PhaseSolver::setLabel(Node& node, NodeLabel newLabel)
     STATS(if ((newLabel - node.getLabel()) > 1) numLabelSkips++; );
     node.setLabel(newLabel);
     node.resetIterations();
+    node.minChildLabel = max(node.distance, newLabel); // move to resetIterations?
     STATS(if (newLabel >= numNodes)  numRemovedNodes++);
 }
 @ %def setLabel
@@ -2281,7 +2280,6 @@ label for strong nodes.
     if (minLabel < MAXINT) {
 	assert(minLabel < numNodes);
 	node.setLabel(minLabel + 1);
-node.setLabel(minLabel);
     } else {
 	node.setLabel(INIT_STRONG_LABEL);
     }
@@ -2501,6 +2499,8 @@ NodeLabel PhaseSolver::relabelBranch(Node& node)
 	    minLabel = l;
 	}
     }
+
+    // add code here to recompute minChildLabel
 
     if (minLabel == MAXINT) {
 	// node has no children
