@@ -19,7 +19,7 @@ Boolean tracingEnabled = FALSE;
 void 
 usage()
 {
-    cerr << "Usage: llps [-d] [-f] [-g freq][-I init] [-N norm] [-B branch] input-graph flow-output" << endl;
+    cerr << "Usage: llps [-d] [-f] [-t] [-x] [-g freq][-I init] [-N norm] [-B branch] input-graph flow-output" << endl;
     cerr << "\t -d   dump the final disposition of each node" << endl;
     cerr << "\t -f   write the flow values for each arc" << endl;
     cerr << "\t -g   specify the global relabel frequency" << endl;
