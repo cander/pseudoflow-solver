@@ -119,22 +119,6 @@ INLINE void Edge::reduceFlow(FlowAmount amt)
     flow -= amt;
 }
 @ %def reduceFlow
-To support converting pseudoflows to flows, we also allow decreasing
-the flow from one node to the other, regardless of orientation.
-<<Edge methods>>=
-    void decreaseFlow(Node& from, FlowAmount amt);
-<<Edge inline implementations>>=
-INLINE void Edge::decreaseFlow(Node& from, FlowAmount amt)
-{ 
-    if (&from == source) { 
-	flow += amt;
-    } else {
-	flow -= amt;
-    }
-    assert((flow >= 0) && (flow <= capacity));
-}
-
-@
 We need to to define the residual
 capacity with respect to the current orientation and from one node
 to the other.
