@@ -251,7 +251,7 @@ main(int argc, char** argv)
     for (int i = 0; i < numLambdas; i++) {
 	lambdaTimers[i].start();
 	if (i > 0) {
-	    solver->setNextCapacityParameter(lambdaValues[i]);
+	    solver->setNextCapacityParameter(lambdaValues[i-1], lambdaValues[i]);
 	}
 
 	(solver->*solverFunc)(addBranchFunc);
