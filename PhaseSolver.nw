@@ -1922,7 +1922,10 @@ void PhaseSolver::saturateAllArcs()
 
     for (int i = 0 ; i < numEdges; i++) {
 	Edge& edge = edges[i];
-	if (edge.getFlow() == 0) {
+	if ((edge.getDest() != sourceNode) &&
+	    (edge.getSource() != sinkNode) &&
+	    (edge.getFlow() == 0))
+	{
 	    FlowAmount excess = edge.saturate();
 
 	    edge.getTail()->decrementExcess(excess);
@@ -1941,7 +1944,7 @@ void PhaseSolver::convertToFlow()
 {
     currentMark = 1024;
     <<replace source and sink arcs>>
-    printExcesses();
+    //printExcesses();
     for (int i = 1; i <= numNodes; i++) {
 	Node& node = nodes[i];
 	if (&node == sourceNode || &node == sinkNode) {
@@ -1951,6 +1954,7 @@ void PhaseSolver::convertToFlow()
 	    pushRootExcess(node);
 	}
     }
+    //printExcesses();
 }
 <<Solver public declarations>>=
     void printExcesses();
@@ -1961,6 +1965,9 @@ void PhaseSolver::printExcesses()
     int negativeExcess = 0;
     for (int i = 1; i <= numNodes; i++) {
 	Node& node = nodes[i];
+	if (&node == sourceNode || &node == sinkNode) {
+	    continue;
+	}
 	if (node.getExcess() < 0) {
 	    negativeExcess += node.getExcess();
 	} else if (node.getExcess() > 0) {
