@@ -142,12 +142,15 @@ INLINE void EdgeList::removeCurrentElement(EdgePtr edgep)
     array[currentIndex] = nil;
 }
 @ %def removeCurrentElement
-Similarly, during rehang operations we need to put a Edge into
-the list at the current cursor location, which should be a hole.
-An exception is if the list is empty or if the current element is
-at the end of the list, in which case we aren't 
-replacing the current cursor location but rather appending to
-the list.
+Similarly, during rehang operations we need to put a Edge into the
+list at the current cursor location, which should be a hole.  In
+this case, we can just stuff the element in the hole.  The exceptions
+are if the list is empty, or if the current element is at the
+begining of the list. Another case comes up with pre-order searches
+where the size is greater than zero, but the current index is still
+zero. In these cases we aren't replacing the current cursor location
+but rather appending to the list.
+
 <<EdgeList methods>>=
     void addCurrentElement(EdgePtr edgep);
 <<EdgeList inline implementations>>=
@@ -155,9 +158,10 @@ INLINE void EdgeList::addCurrentElement(EdgePtr edgep)
 {
     if ((size == 0) || (currentIndex == size)) {
 	appendEdge(edgep);
-    } else {
-	assert(array[currentIndex] == nil);
+    } else if (array[currentIndex] == nil) {
 	array[currentIndex] = edgep;
+    } else {
+	appendEdge(edgep);
     }
 }
 @ %def addCurrentElement
