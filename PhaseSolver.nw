@@ -46,7 +46,7 @@ void PhaseSolver::solve(AddBranchPtr addFunc)
     TRACE(int currentPhase = 0;)
     addBranchFunc = addFunc;
     renormalizeFunc = &PhaseSolver::fullRenormalize;
-    int relabelCounter = numNodes;
+    int relabelCounter = numNodes / 2;
 
     NodePtr strongBranch = getLowestBranch();
     while (strongBranch != nil) {
@@ -85,8 +85,8 @@ execution.
 This is rather expensive, so we don't want to do it very often.
 <<check for global relabel>>=
     if (numRelabels > relabelCounter) {
-	globalRelabel();
-	relabelCounter = numRelabels + numNodes;
+	//globalRelabel();
+	relabelCounter = numRelabels + numNodes / 2;
     }
 @
 \subsection{Processing Branches}
@@ -155,6 +155,7 @@ Boolean PhaseSolver::processSubtree(Node& node)
     }
 
     // no merger
+    <<verify no merger available>>
     incrementLabel(node);
     STATS(numRelabels++);
     TRACE(trout << "node " << node.getId() << " relabled to "
@@ -212,6 +213,22 @@ won't try to merge.}
 	node.advanceNeighbors();
     }
 @
+<<verify no merger available>>=
+#ifdef DEBUG
+    ElIterator it = node.getNeighbors();
+    for (EdgePtr edge = it.getNext(); edge != nil; edge=it.getNext()) {
+	Node& neighbor = *edge->getOtherNode(&node);
+	FlowAmount residCap = edge->residCapacity(node);
+	if (residCap > 0 && (neighbor.isStrong(FALSE)) == FALSE) {
+	    if (neighbor.getLabel() < (node.getLabel() - 1)) {
+		cout << "Missed merger from " << node.getId() << " (l="
+		     << node.getLabel() << ") to " << neighbor.getId()
+		     << " (l=" << neighbor.getLabel() << ")" << endl;
+	    }
+	}
+    }
+#endif /*DEBUG*/
+@
 Back in [[processSubtree]] we had a simple method call to increment
 the label on a node.  Normally, we would just call [[incrementLabel]]
 on the node, but we want to track how many nodes we have with each
@@ -249,6 +266,7 @@ INLINE void PhaseSolver::setLabel(Node& node, NodeLabel newLabel)
 #endif /* COUNT_LABELS */
     node.setLabel(newLabel);
     node.resetIterations();
+    // could put code here to count nodes that get set to numNodes
 }
 @ %def setLabel
 When we know that a branch cannot merge with
@@ -534,6 +552,33 @@ Empty a bucket.
 <<Node Bucket methods>>=
     void emptyBucket() { head = tail = nil; }
 @ %def emptyBucket
+Typically, we remove nodes only from the head of the bucket.  However,
+during global relabeling, we may wish to remove an arbitrary node.
+Fortunately, this doesn't happen often, so we can affort the cost of
+an $O(n)$ remove operation.
+<<Node Bucket methods>>=
+    void	removeNode(Node& node);
+<<Solver method implementations>>=
+void NodeBucket::removeNode(Node& node)
+{
+    NodePtr prev = nil;
+    for (NodePtr curr = head; curr != nil; curr = curr->getNext()) {
+	if (curr == &node) {
+	    if (prev == nil) {
+		removeHead();
+	    } else {
+		prev->setNext(curr->getNext());
+		if (tail == curr) {
+		    tail = prev;
+		}
+		curr->setNextNil();
+	    }
+	    return;
+	}
+	prev = curr;
+    }
+    assert("couldn't find node in bucket" == nil);
+}
 <<Solver data>>=
     NodeBucket*	buckets;
 <<default Solver constructor>>=
@@ -541,11 +586,9 @@ Empty a bucket.
 @ %def buckets
 <<Node Bucket methods>>=
     void	dumpBucket();
-@ 
-{\em Note: this is in the `wrong' chunck Solver rather than bucket.}
+@ {\em Note: this is in the `wrong' chunck Solver rather than bucket.}
 <<Solver method implementations>>=
-void 
-NodeBucket::dumpBucket()
+void NodeBucket::dumpBucket()
 {
     cout << "head = " << head;
     if (head != nil) {
@@ -2041,6 +2084,7 @@ void PhaseSolver::buildSpTree()
 	<<build weak branch>>
     }
 
+    //setInitialNodeStatus();
     setSpInitialNodeStatus();
 }
 @ %def buildSpTree
@@ -2150,8 +2194,14 @@ void PhaseSolver::setSpInitialNodeStatus()
 	Node& node = nodes[i];
 	if (node.getExcess() > 0) {
 	    <<set label to minimum of weak neighbors>>
+node.setLabel(INIT_STRONG_LABEL);
 	    addStrongBranch(node);
 	} 
+/*
+else {
+    node.setLabel(INIT_WEAK_LABEL);
+}
+*/
 	labelCount[node.getLabel()]++;
 	node.resetIterations();
     }
@@ -2204,8 +2254,9 @@ void PhaseSolver::globalRelabel()
 {
     <<set initial distance labels to infinity>>
     <<search backwards from the sink labeling nodes>>
-    <<identify strong nodes>>
-    <<set weak labels to distance labels>>
+    <<relabel/remove each branch>>
+cout << "Checking branches" << endl;
+checkBranches();
 }
 @ %def globalRelabel
 We start by labeling all nodes with an initial distance of [[MAXINT]].
@@ -2235,57 +2286,8 @@ merge and become weak.  Do we care??}
 	    }
 	}
     }
-@ Next, we want to identify the strong nodes, in particular those with
-infinite distance because they are no longer reachable from the sink.
-With the other strong nodes, still want to recognize them to prevent us
-from setting their labels to match their distance from the sink.
-We do this by setting the distance to infinity even for non-isolated
-nodes.
-<<identify strong nodes>>=
-    for (int i = lowestLabel; i < highestLabel; i++) {
-	NodePtr prevNode = nil;
-	for (NodePtr nodep = buckets[i].getHead();
-	     nodep != nil; 
-	     nodep = nodep->getNext())
-	{
-	    if (nodep->distance == MAXINT) {
-		<<remove root from bucket>>
-	    } else {
-		setBranchDistance(*nodep, MAXINT);
-	    }
-
-	    prevNode = nodep;
-	}
-    }
-@ Removing a branch root from a bucket is a little complicated because we
-only have a singly-linked list.  However, we have been maintaining
-[[prevNode]] to help us out.  If it's null, we know we're removing
-from the head of the list, which is easy.  Otherwise, we've got to
-play with the next pointers.
-<<remove root from bucket>>=
-    if (prevNode == nil) {
-	buckets[i].removeHead();
-	nodep->setNextNil();		// want to count the nodes we've removed
-    } else {
-	prevNode->setNext(nodep->getNext());
-	nodep->setNextNil();
-	nodep = prevNode;	// so nodep->getNext will work
-    }
-@ Finally, we want to update the labels of the weak nodes to match their
-distances from the sink.  For this we must iterate over all nodes
-in the graph because we don't track weak branches.  We identify weak nodes 
-because they have distances less than infinity - strong nodes that are
-either still active or have been removed will have infinite distance.
-<<set weak labels to distance labels>>=
-    for (int i = 1; i <= numNodes; i++) {
-	Node& node = nodes[i];
-	int distance = node.distance;
-	if ((distance < MAXINT) && (distance > node.getLabel())) {
-	    TRACE( trout << "relabeling " << node.getId() << " from " 
-			 << node.getLabel() << " to " << distance << endl; );
-	    setLabel(node, distance);
-	}
-    }
+@ Computing the distance labels is pretty straightforward.  This code
+should be combined with the same code that does this during initialization.
 <<Solver methods>>=
     void computeDistanceLabels(Node& node);
 <<Solver method implementations>>=
@@ -2304,18 +2306,90 @@ void PhaseSolver::computeDistanceLabels(Node& node)
     }
 }
 @ %def computeDistanceLabels
+
+After we've labeled the nodes, we want to scan all of the branches.  
+For strong branches,
+we would like to remove them or (in the future) update their labels to
+reflect their distances.  For weak branches, we will just update the labels 
+For this we must iterate over all nodes in the graph looking for roots
+because we don't track weak branches.  
+<<relabel/remove each branch>>=
+    for (int i = 1; i <= numNodes; i++) {
+	Node& node = nodes[i];
+	if ((&node == sourceNode) || (&node == sinkNode)) {
+	    continue;
+	}
+	if (node.isRootNode()) {
+	    int distance = node.distance;
+	    if (isStrongNode(node)) {
+		<<relabel/remove strong branch>>
+	    } else {
+		relabelWeakBranch(node);
+	    }
+	}
+    }
+@  If the root of a strong branch has distance label MAXINT, we assume
+the whole branch does too, and we can remove it from the bucket.
+We set the labels of all nodes in the branches to [[numNodes]] to
+prevent any strong branches from trying to merge with this branch.
+In the future, maybe we can relabel the strong branch???
+<<relabel/remove strong branch>>=
+    if ((distance == MAXINT) && (node.getLabel() < numNodes)) {
+	buckets[node.getLabel()].removeNode(node);
+	setBranchLabel(node, numNodes);
+    }
 <<Solver methods>>=
-    void setBranchDistance(Node& node, int dist);
+    void setBranchLabel(Node& node, NodeLabel l);
 <<Solver method implementations>>=
-void PhaseSolver::setBranchDistance(Node& node, int dist)
+void PhaseSolver::setBranchLabel(Node& node, NodeLabel l)
 {
-    node.distance = dist;
+    // XXX move this method to Node?
+    TRACE( trout << "relabeling " << node.getId() << " from " 
+			 << node.getLabel() << " to " << l << endl; );
+    setLabel(node, l);
     ElIterator it = node.getChildren();
     for (EdgePtr edge = it.getNext(); edge != nil; edge=it.getNext()) {
-	setBranchDistance(*edge->getOtherNode(&node), dist);
+	setBranchLabel(*edge->getOtherNode(&node), l);
     }
 }
-@ %def setBranchDistance
+@ %def setBranchLabel
+To relabel a weak ({\em or strong?}) branch, we need to respect the 
+monotonicity in the tree.  In a weak branch, monotonicity doesn't
+matter so long as the branch stays weak, but if it later becomes strong,
+we must have monotonicity for the rest of the implementation to work.
+Ideally, we'd like to increase our label to match our distance.  However,
+out new label cannot be higher than any of our children.  So, first
+we recursively set the labels of our children and in the process compute
+the minimum label among them.  Then we update our own label.
+<<Solver methods>>=
+    NodeLabel relabelWeakBranch(Node& node);
+<<Solver method implementations>>=
+NodeLabel PhaseSolver::relabelWeakBranch(Node& node)
+{
+    NodeLabel minLabel = MAXINT;
+    ElIterator it = node.getChildren();
+    for (EdgePtr edge = it.getNext(); edge != nil; edge=it.getNext()) {
+	NodeLabel l = relabelWeakBranch(*edge->getOtherNode(&node));
+	if (l < minLabel) {
+	    minLabel = l;
+	}
+    }
+
+    assert(minLabel >= node.getLabel());
+    if (node.distance > node.getLabel()) {
+	NodeLabel newLabel = (minLabel < node.distance) ? minLabel : node.distance;
+	assert(newLabel >= node.getLabel());
+
+	if (newLabel > node.getLabel()) {
+	    TRACE( trout << "relabeling " << node.getId() << " from " 
+			 << node.getLabel() << " to " << minLabel << endl; );
+	    setLabel(node, minLabel);
+	}
+    }
+
+    return node.getLabel();
+}
+@ %def relabelWeakBranch
 \subsection{Recovering a Feasible Flow}
 When the pseudoflow algorithm completes, there are no merger arcs between
 the strong nodes and weak nodes, and there is excess at the roots of
