@@ -41,7 +41,7 @@
 #ifdef STATS_TRACING
     #define STATS(expr)	expr
 #else
-    #define STATS(expr) 	;
+    #define STATS(expr) 
 #endif
 
 #endif /*DEBUG_H*/
