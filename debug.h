@@ -27,10 +27,10 @@
 #endif
 
 
-#ifdef PERF_TRACING
-    #define PERF_METER(expr)	expr
+#ifdef STATS_TRACING
+    #define STATS(expr)	expr
 #else
-    #define PERF_METER(expr) 	;
+    #define STATS(expr) 	;
 #endif
 
 #endif /*DEBUG_H*/
