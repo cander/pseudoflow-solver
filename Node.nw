@@ -392,7 +392,7 @@ INLINE void Node::decrementExcess(NodeExcess delta)
 { excess -= delta; }
 INLINE void Node::setExcess(NodeExcess newExcess)
 { excess = newExcess; }
-@ %def getExcess decrementExcess setExcess
+@ %def getExcess incrementExcess decrementExcess setExcess
 When a non-root node has excess, we need to push excess as much as possible
 from the node towards the root.  We do this on a node-by-node basis
 - i.e. we just push the flow to our parent and let him worry about it.
@@ -463,6 +463,7 @@ void Node::init(NodeId id, int numNeighbors)
     neighbors.init(numNeighbors);
     children.init(numNeighbors + 3);
 }
+@ %def init
 <<Node data>>=
 public:
     static const int INITIAL_LABEL = 0;
@@ -489,7 +490,7 @@ INLINE void Node::clearFlagPath(int f, NodePtr end)
 	end->clearFlag(f);
     }
 }
-@ init
+@ clearFlagPath
 \subsection{Debugging}
 To aid in debugging the tree and graph manipulation functions,
 we have some functions that we can use to print and check the
@@ -553,7 +554,6 @@ swamp the output that we look at.
 Boolean Node::checkTree(EdgePtr expectedParentEdge)
 {
     Boolean treeOK = TRUE;
-    //  cout << id << " ";
     <<check parent pointers>>
 
     if (treeOK) {
