@@ -83,15 +83,60 @@ Then, we update the orientation of the
 orientation of the edge to point from child to parent.
 And finally, we update set the child's parent edge.
 <<Node methods>>=
-    void addChild(NodePtr child, Edge& edge);
+    void addChild(Node& child, Edge& edge);
 <<Node method implementations>>=
-void Node::addChild(NodePtr child, Edge& edge)
+void Node::addChild(Node& child, Edge& edge)
 {
+    assert(edge.validateEdge(*this, child));
     children.appendEdge(&edge);
     edge.setDirectionTo(this);
-    child->parentEdge = &edge;
+    child.parentEdge = &edge;
 }
 @ %def addChild
+We need methods to iterate over the neighbors and children.  These
+are basically simple pass-through functions for the underlying lists
+of edges. 
+First, iterating over children:
+<<Node methods>>=
+    void	beginChildren();
+    Boolean	hasMoreChildren();
+    Node&	getCurrentChild();
+    void	advanceChildren();
+<<Node inline implementations>>=
+INLINE void Node::beginChildren()
+{ children.beginIteration(); }
+INLINE Boolean Node::hasMoreChildren()
+{ return children.hasMoreElements(); }
+INLINE Node& Node::getCurrentChild()
+{ return *(children.getCurrentElement()->getOtherNode(this)); }
+INLINE void Node:: advanceChildren()
+{ children.advanceToNextElement(); }
+@ %def beginChildren hasMoreChildren getCurrentChild advanceChildren
+And we have basically the same code for iterating over neighbors:
+<<Node methods>>=
+    void	beginNeighbors();
+    Boolean	hasMoreNeighbors();
+    Edge&	getCurrentNeighbor();
+    void	advanceNeighbors();
+<<Node inline implementations>>=
+INLINE void Node::beginNeighbors()
+{ neighbors.beginIteration(); }
+INLINE Boolean Node::hasMoreNeighbors()
+{ return neighbors.hasMoreElements(); }
+INLINE Edge& Node::getCurrentNeighbor()
+{ return *neighbors.getCurrentElement(); }
+INLINE void Node:: advanceNeighbors()
+{ neighbors.advanceToNextElement(); }
+@ %def beginNeighbors hasMoreNeighbors getCurrentNeighbor advanceNeighbors
+Finally, before we begin processing a node, we need to reset the
+iterations on both the children and the neighbors.
+<<Node methods>>=
+    void resetIterations();
+<<Node inline implementations>>=
+INLINE void Node::resetIterations()
+{ children.beginIteration(); neighbors.beginIteration(); }
+@ %def resetIterations
+
 The opposite of adding a child is spliting off a sub-tree by removing
 a node from its parent.  This is quite straightforward: remove the
 parent edge of the node from its parent's list of children, and 
@@ -164,6 +209,32 @@ NodePtr Node::rehang()
     return oldRoot;
 }
 @
+In addition to the tree structure and a Node's neighbors, we need
+to build a linked list of nodes for use by the solver.  This
+is a simple, singly-linked list with one pointer to the next
+element in the list.
+<<Node data>>=
+    NodePtr	nextNode;
+<<default Node constructor>>=
+    nextNode = 0;
+@ %def nextNode
+We need to be able to set it to [[nil]] or another value.
+<<Node methods>>=
+    void setNextNil();
+    void setNext(NodePtr next);
+<<Node inline implementations>>=
+INLINE void Node::setNextNil()
+{ nextNode = nil; }
+INLINE void Node::setNext(NodePtr next)
+{ nextNode = next; }
+@ %def setNextNil setNext
+Finally, we need a way to get the next element in the list.
+<<Node methods>>=
+    NodePtr getNext();
+<<Node inline implementations>>=
+INLINE NodePtr Node::getNext()
+{ return nextNode; }
+@ %def getNext
 A node can also have excess flow associated with it.  Typically,
 this only occurs at a node that is adjacent to the pseduo-root
 of the tree.  In our implementation, we store excess on nodes
@@ -205,7 +276,7 @@ Boolean Node::pushToParent()
     assert(parent.excess == 0);
     assert(edge.residCapacity() > 0);
 
-    if (edge.residCapacity() > excess) {
+    if (edge.residCapacity() > excess) {	// ZERO_DEFICT
 	<<push without splitting>>
 	return FALSE;
     } else {
@@ -216,7 +287,7 @@ Boolean Node::pushToParent()
 @ %def pushToParent
 Pushing when we have enough capacity, is pretty simple.  Our parent
 gets all of our excess, our excess
-becomes zero, and the flow amount on the edge increase.
+becomes zero, and the flow amount on the edge increases.
 <<push without splitting>>=
     FlowAmount flow = excess;
     parent.excess = flow;
@@ -257,6 +328,7 @@ void Node::init(NodeId id, int numNeighbors)
     children.init(numNeighbors + 3);
 }
 @ init
+\subsubsection{Debugging}
 To aid in debugging the tree and graph manipulation functions,
 we have some functions that we can use to print and check the
 data structures.
@@ -371,6 +443,17 @@ and check each of them in turn.  We must skip holes in the list
 	    }
 	}
     }
+@
+We need a few function declarations for functions that the
+compiler will automatically generate for us.  We don't want to use
+these functions because doing so would signal an error in our code
+that could result is dismal performance or bugs.  We declare them
+private and provide no implementation so that compiler or linker
+will flag them as errors.
+<<C++ overhead>>=
+private: 
+    Node(const Node&);
+    Node& operator=(const Node&);
 @
 \subsubsection{File Boiler Plate}
 We start with the boiler-plate implementation file. 
