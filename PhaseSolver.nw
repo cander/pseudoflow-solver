@@ -46,7 +46,11 @@ void PhaseSolver::solve(AddBranchPtr addFunc)
     TRACE(int currentPhase = 0;)
     addBranchFunc = addFunc;
     renormalizeFunc = &PhaseSolver::fullRenormalize;
-    relabelCounter = numNodes;
+    if (relabelFrequency > 0.0) {
+	relabelCounter = numNodes;	// muliply by frequency?
+    } else {
+	relabelCounter = MAXINT;
+    }
 
     NodePtr strongBranch = getLowestBranch();
     while (strongBranch != nil) {
@@ -63,9 +67,22 @@ void PhaseSolver::solve(AddBranchPtr addFunc)
 	<<check for global relabel>>
 	strongBranch = getLowestBranch();
     }
-checkMergers();		// TTT
 }
 @ %def solve
+Periodically, we may wish to perform global relabeling operations.
+This is rather expensive, so we don't want to do it very often.
+<<check for global relabel>>=
+    if (numRelabels > relabelCounter) {
+	globalRelabel();
+	relabelCounter = numRelabels + (int)(numNodes * relabelFrequency);
+    }
+<<Solver data>>=
+    int relabelCounter;
+<<public Solver data>>=
+    float relabelFrequency;
+<<default Solver constructor>>=
+    relabelFrequency = 0.0;
+@ %def relabelCounter relabelFrequency
 For each possible value for a node's label, if we track the number of 
 nodes with that label, then it is possible to terminate the algorithm
 early.  If the lowest labeled strong branch has label $\ell$, and
@@ -74,35 +91,46 @@ because the strong branch cannot merge with any weak branches, and
 the labels of the strong branches will only increase further during
 execution.
 <<terminate early based on counting labels>>=
-    #ifdef TERM_LABELS
+#ifdef TERM_LABELS
 	if ((labelCount[strongLabel - 1] == 0) && 
 	    (strongLabel > INIT_WEAK_LABEL))
 	{
-checkBranches();
+	    Boolean earlyTerm = FALSE;
+	    if (relabelFrequency > 0.0) {
+		<<perform last global relabel>>
+	    } else {
+		earlyTerm = TRUE;
+	    }
 
-/*
--- put back strong branch
--- global relabel
--- get strong branch
--- if labelCount still equal zero, break
-*/
-if (strongLabel > 100) {
-	    cout << "Early termination" << endl;
-	    break;
-} else {
-    cout << "Ignoring early termination at label " << strongLabel << endl;
-}
+	    if (earlyTerm) {
+		cout << "Early termination at label " << strongLabel << endl;
+		break;
+	    }
 	}
-    #endif /* TERM_LABELS */
-@ Periodically, we may wish to perform global relabeling operations.
-This is rather expensive, so we don't want to do it very often.
-<<check for global relabel>>=
-    if (numRelabels > relabelCounter) {
-	globalRelabel();
-	relabelCounter = numRelabels + numNodes;
+#endif /* TERM_LABELS */
+@ With global relabeling, we can develop a gap in the node labels before
+we are done processes - i.e. while there are still merger arcs.  If we 
+perform another global relabel, that should close the gap by raising the
+labels of various weak and strong nodes.  If the gap persists, we really
+are done.  Note that if we are done before this final relabel, the relabel
+operation should prune out all of the strong nodes because they will no
+longer be able to reach the sink.  In this case, [[getLowestBranch]] should
+return null.
+<<perform last global relabel>>=
+    addStrongBranch(*strongBranch);	// should addHead
+cout << "Performing final global relabel at phase " << strongLabel 
+     << " with " << numRemovedNodes << " nodes pruned from the graph" << endl;
+    globalRelabel();
+    strongBranch = getLowestBranch();
+    if (strongBranch == nil) {
+	break;
     }
-<<Solver data>>=
-    int relabelCounter;
+    strongLabel =  strongBranch->getLabel();
+    if ((labelCount[strongLabel - 1] == 0) && 
+	(strongLabel > INIT_WEAK_LABEL))
+    {
+	earlyTerm = TRUE;
+    }
 @
 \subsection{Processing Branches}
 We process the tree one branch at a time looking for mergers or
