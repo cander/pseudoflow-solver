@@ -87,7 +87,7 @@ the first non-hole or the end of the array.
 <<EdgeList internal methods>>=
     void skipHoles();
 <<EdgeList inline implementations>>=
-void EdgeList::skipHoles()
+INLINE void EdgeList::skipHoles()
 {
     while ((array[currentIndex] == nil) && (currentIndex < size)) {
 	currentIndex++;
@@ -246,7 +246,6 @@ EdgePtr EdgeList::getElement(int i) const
 We start with the boiler-plate implementation file. 
 <<*>>=
 #include "EdgeList.h"
-#include "debug.h"
 #include <iostream.h>
 #include <iomanip.h>
 #include <assert.h>
@@ -259,18 +258,19 @@ out-of-line to allow us to collect better profile information -
 i.e. collect data on the inline functions that would otherwise
 not show up in the function call traces of the profiler.
 <<*>>=
-#ifndef INLINE_NODELIST
+#ifndef INLINE_EDGELIST
 #define INLINE /*inline*/
 <<EdgeList inline implementations>>
 #undef INLINE 
-#endif /*INLINE_NODELIST*/
+#endif /*INLINE_EDGELIST*/
 @
 The header defines the [[EdgeList]] class, its member functions, member
 data, and inline functions.  Again, we have more boiler-plate.
 <<header>>=
-#ifndef NODELIST_H
-#define NODELIST_H
+#ifndef EDGELIST_H
+#define EDGELIST_H
 #include "types.h"
+#include "debug.h"
 
 class EdgeList 
 {
@@ -285,10 +285,10 @@ private:
 In case we want the inline functions to really be inlined, we
 also define them here in the header file.
 <<header>>=
-#ifdef INLINE_NODELIST
+#ifdef INLINE_EDGELIST
 #define INLINE inline
 <<EdgeList inline implementations>>
 #undef INLINE 
-#endif /*INLINE_NODELIST*/
+#endif /*INLINE_EDGELIST*/
 
-#endif /*NODELIST_H*/
+#endif /*EDGELIST_H*/
