@@ -31,7 +31,7 @@ PROGRAMS = llps pllps gpps
 DOCFILES = doc.dvi doc.ps doc.aux doc.log allcode.tex doc.tex doc.toc
 
 # files we distribute in a tarball
-DISTFILES = README.html Makefile site.mk $(SRCS) types.h debug.h $(WEBFILES) doc.nw 
+DISTFILES = README.html Makefile site.mk $(SRCS) types.h debug.h $(WEBFILES) doc.nw doc.ps
 
 
 NOTANGLE=notangle
@@ -136,8 +136,10 @@ cvsignore:
 	echo "*.doc *.dvi *.ps *.log *.toc *.tex *.aux *.swp" > .cvsignore
 	echo $(SRCS) .cvsignore >> .cvsignore
 
-# should build and include doc.ps
+# after making clean, we have to run latex 3 times - doc.dvi does it 2x
 tarball: clean purec 
+	$(MAKE) doc.dvi ; latex doc
+	$(MAKE) doc.ps
 	tar cvf pseudoflow.tar $(DISTFILES)
 
 # dependencies - these should be done automatically
