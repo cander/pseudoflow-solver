@@ -268,8 +268,11 @@ is a simple, singly-linked list with one pointer to the next
 element in the list.
 <<Node data>>=
     NodePtr	nextNode;
+<<Node methods>>=
+    NodePtr	next2;
 <<default Node constructor>>=
-    nextNode = 0;
+    nextNode = nil;
+    next2 = nil;
 @ %def nextNode
 We need to be able to set it to [[nil]] or another value.
 <<Node methods>>=
