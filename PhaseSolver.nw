@@ -84,9 +84,7 @@ We process the tree one branch at a time looking for mergers or
 relabeling nodes.  As soon as there is a merger, we stop processing
 this branch to allow the main loop to fetch the next, lowest-labeled
 branch from the buckets.  It could be that we resume processing this 
-branch, which is OK.  In fact, it is probably desireable since
-the branch has been inverted.  If there was no merger, we
-move the branch to the next bucket.
+branch.  If there was no merger, we move the branch to the next bucket.
 
 As an optimization, we check to see if there are any nodes that
 we could possibly merge with before invesigating the branch.
@@ -173,7 +171,7 @@ where we didn't split immediately up zero residual capacity, we
 would have zero-capacity arcs that are in the tree (i.e. the parent
 arc), but we wouldn't want to use them for mergers.  This would
 be a mess, but we could overcome it.  Actually, it seems pretty
-ease: during phase $\ell$, both the node and it's parent have
+easy: during phase $\ell$, both the node and it's parent have
 label $\ell$, so when we check the label of the neighbor, we
 won't try to merge.}
 <<look for merger among neighbors>>=
@@ -287,9 +285,6 @@ void PhaseSolver::merge(Node& strong, Node& weak, Edge& edge)
 <<default Solver constructor>>=
     renormalizeFunc = &PhaseSolver::fullRenormalize;
 @
-{\em Note: the order of this code is all messed up - rationalize it
-someday.}
-
 Push excess from the former strong root, [[src]] to the strong node 
 and one step beyond to the weak node, [[dest]].
 When this finishes, the remaining excess will be stored on
@@ -562,12 +557,12 @@ INLINE void PhaseSolver::addStrongBranch(Node& root)
 }
 @ %def addStrongBranch
 This is a little tricky because we don't have a flag that to tell
-us directly if the node is already in the tree.  Instead, we will
-just look at the next pointer.  If the pointer is non-null, then
-it must already be in a bucket.  However, the pointer might be
-null if it's the last node in the bucket, so we have to check for
-that too.  If it is in the bucket, we'll check its label against
-the label of the nodes already in the tree.
+us directly if the branch is already in the bucket.  Instead, we
+will just look at the [[next]] pointer.  If the pointer is non-null,
+then it must already be in a bucket.  However, the pointer might
+be null if it's the last node in the bucket, so we have to check
+for that too.  If it is in the bucket, we'll check its label against
+the label of the nodes already in the bucket.
 <<check if root is already in the tree>>=
     if ((root.getNext() != nil) || 
         (buckets[label].getTail() == &root))
@@ -595,7 +590,7 @@ void PhaseSolver::addBranchLifo(Node& root)
 {
     buckets[root.getLabel()].insertHead(root);
 }
-@ %def addBranchFifio addBranchLifo
+@ %def addBranchFifo addBranchLifo
 The ``wave'' branch management is rather weak: it looks to
 see if the branch root we are adding is the same as the
 branch root we started processing.  If so it puts the
