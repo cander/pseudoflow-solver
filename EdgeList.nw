@@ -1,38 +1,44 @@
-\subsection{Lists of Nodes}
+\subsection{Lists of Edges}
 To represent the original graph, we need a list of the neighbors
 of a node.  To represent a tree, we need a list of the children
-Nodes.  In both cases, the number of nodes in the list is
+Nodes.  However, as we scan for merger arcs or rehang the tree,
+we need more than just a pointer to a Node, we also need the
+edge that defines the relationship between the two nodes.  Therefore,
+we need a list of Edges rather than a list of Nodes.
+
+In principal, the number of edges in the list is
 bounded by the degree of the node.  
 {\em However, for a child list, during rehang operations we 
 will be removing nodes and adding them.  Because we want to
-avoid compacting the list (slow), we should allow the list
+avoid compacting the list (slow) after deleting a node, we 
+should allow the list
 to be dynamic.  For the moment, we will ignore this and will
 revisit it later.}
 
-A list is simply an array of node pointers, a capacity, and a current
+A list is simply an array of Edge pointers, a capacity, and a current
 size.
-<<NodeList data>>=
-    NodePtr*	array;
+<<EdgeList data>>=
+    EdgePtr*	array;
     int		capacity;
     int		size;
 @ Here are constructors and an initialization method for use after a
 constructor has already been called (e.g. after allocating an array
 of NodeLists).
-<<NodeList methods>>=
+<<EdgeList methods>>=
 public:
-    NodeList();
-    NodeList(int cap);
+    EdgeList();
+    EdgeList(int cap);
     void init(int cap);
-<<NodeList inline implementations>>=
-INLINE NodeList::NodeList()
+<<EdgeList inline implementations>>=
+INLINE EdgeList::EdgeList()
 { array = nil; capacity = size = 0; }
-INLINE NodeList::NodeList(int cap) : array(nil)
+INLINE EdgeList::EdgeList(int cap) : array(nil)
 { init(cap); }
-<<NodeList method implementations>>=
-void NodeList::init(int cap)
+<<EdgeList method implementations>>=
+void EdgeList::init(int cap)
 { 
     delete array; 
-    array = new NodePtr[cap]; 
+    array = new EdgePtr[cap]; 
     capacity = cap; size = 0;
     for (int i = 0; i < cap; i++) {
 	array[i] = nil;
@@ -42,34 +48,34 @@ void NodeList::init(int cap)
 @
 The point of the list is to store items, so we need a way to add elements
 to the list.  The simplist is to add an element to the end of the list.
-<<NodeList methods>>=
-    void appendNode(NodePtr nodep);
-<<NodeList method implementations>>=
-void NodeList::appendNode(NodePtr nodep)
+<<EdgeList methods>>=
+    void appendEdge(EdgePtr edgep);
+<<EdgeList method implementations>>=
+void EdgeList::appendEdge(EdgePtr edgep)
 {
     assert((array != nil) && (size < capacity));
-    array[size] = nodep;
+    array[size] = edgep;
     size++;
 }
-@ %def appendNode
-We need methods to iterate over these lists of nodes.  We have no
+@ %def appendEdge
+We need methods to iterate over these lists of edges.  We have no
 requirement to support multiple simultaneous iterations, so we can
 implement the functions and the iteration state directly on the
-node list class (\{em someday using STL would make sense).
+edge list class (\{em someday using STL would make sense).
 The methods are pretty straightforward.
-<<NodeList methods>>=
+<<EdgeList methods>>=
     void beginIteration();
     Boolean hasMoreElements();
-    NodePtr getCurrentElement();
+    EdgePtr getCurrentElement();
     void advanceToNextElement();
 @ 
 With this simple interface, we only need to keep track of
 the current index into the array to implement a cursor, 
 and begining the iteration is trivial.
-<<NodeList data>>=
+<<EdgeList data>>=
     int currentIndex;
-<<NodeList inline implementations>>=
-INLINE void NodeList::beginIteration()
+<<EdgeList inline implementations>>=
+INLINE void EdgeList::beginIteration()
 { currentIndex = 0; }
 @ %def currentIndex beginIteration
 Because we allow `holes' to exist within a childlist, the code
@@ -78,10 +84,10 @@ holes.  So, we add a method to skip over any holes begining
 at the current position.
 It will either leave the cursor pointing to
 the first non-hole or the end of the array.
-<<NodeList internal methods>>=
+<<EdgeList internal methods>>=
     void skipHoles();
-<<NodeList inline implementations>>=
-void NodeList::skipHoles()
+<<EdgeList inline implementations>>=
+void EdgeList::skipHoles()
 {
     while ((array[currentIndex] == nil) && (currentIndex <= size)) {
 	currentIndex++;
@@ -92,8 +98,8 @@ With [[skipHoles]] in place, the other methods are pretty simple
 to implement.  Basically, they use [[skipHoles]] to update the
 cursor, and perform their real work.  [[hasMoreElements]] just
 tells us if there are any more non-hole elements in the list.
-<<NodeList inline implementations>>=
-INLINE Boolean NodeList::hasMoreElements()
+<<EdgeList inline implementations>>=
+INLINE Boolean EdgeList::hasMoreElements()
 {
     skipHoles();
     return (currentIndex == size) ? TRUE : FALSE;
@@ -103,8 +109,8 @@ INLINE Boolean NodeList::hasMoreElements()
 This should almost never be a hole because callers should
 call [[hasMoreElements]] first.  Currently, we raise an assertion
 if this happens.  We can fix it later if need be.
-<<NodeList inline implementations>>=
-INLINE NodePtr NodeList::getCurrentElement()
+<<EdgeList inline implementations>>=
+INLINE EdgePtr EdgeList::getCurrentElement()
 {
     assert((currentIndex < size) && (array[currentIndex] != nil));
     return array[currentIndex];
@@ -113,8 +119,8 @@ INLINE NodePtr NodeList::getCurrentElement()
 The [[advanceToNextElement]] moves us to the next non-hole
 element unless we're at the end of the array already, in
 which case it is a no-op.
-<<NodeList inline implementations>>=
-INLINE void NodeList::advanceToNextElement()
+<<EdgeList inline implementations>>=
+INLINE void EdgeList::advanceToNextElement()
 {
     if (currentIndex < size) {
 	currentIndex++;
@@ -127,39 +133,42 @@ the child pointed to by the current cursor.  This is
 the cause of holes in the list.  We pass in the value
 that we expect to be at the cursor, mostly out of
 paranoia.
-<<NodeList methods>>=
-    void removeCurrentElement(NodePtr nodep);
-<<NodeList inline implementations>>=
-INLINE void NodeList::removeCurrentElement(NodePtr nodep)
+<<EdgeList methods>>=
+    void removeCurrentElement(EdgePtr edgep);
+<<EdgeList inline implementations>>=
+INLINE void EdgeList::removeCurrentElement(EdgePtr edgep)
 {
-    assert((currentIndex < size) && (array[currentIndex] == nodep));
+    assert((currentIndex < size) && (array[currentIndex] == edgep));
     array[currentIndex] = nil;
 }
 @ %def removeCurrentElement
-Similarly, during rehang operations we need to put a Node into
+Similarly, during rehang operations we need to put a Edge into
 the list at the current cursor location, which should be a hole.
-<<NodeList methods>>=
-    void addCurrentElement(NodePtr nodep);
-<<NodeList inline implementations>>=
-INLINE void NodeList::addCurrentElement(NodePtr nodep)
+An exception is if the list is empty, in which case we aren't 
+replacing the current cursor location but rather appending to
+the list.
+<<EdgeList methods>>=
+    void addCurrentElement(EdgePtr edgep);
+<<EdgeList inline implementations>>=
+INLINE void EdgeList::addCurrentElement(EdgePtr edgep)
 {
     if (size > 0) {
 	assert((currentIndex < size) && (array[currentIndex] == nil));
-	array[currentIndex] = nodep;
+	array[currentIndex] = edgep;
     } else {
-	appendNode(nodep);
+	appendEdge(edgep);
     }
 }
 @ %def addCurrentElement
 Here are some direct accessor methods for use during debugging.
 These really should be 'hidden' and shared only to [[friends]].
-<<NodeList debug methods>>=
+<<EdgeList debug methods>>=
     int getSize() const;
-    NodePtr getElement(int i) const;
-<<NodeList method implementations>>=
-int NodeList::getSize() const
+    EdgePtr getElement(int i) const;
+<<EdgeList method implementations>>=
+int EdgeList::getSize() const
 { return size; }
-NodePtr NodeList::getElement(int i) const
+EdgePtr EdgeList::getElement(int i) const
 {
     assert(i < size);
     return array[i];
@@ -168,13 +177,13 @@ NodePtr NodeList::getElement(int i) const
 \subsubsection{File Boiler Plate}
 We start with the boiler-plate implementation file. 
 <<*>>=
-#include "NodeList.h"
+#include "EdgeList.h"
 #include "debug.h"
 #include <iostream.h>
 #include <iomanip.h>
 #include <assert.h>
 
-<<NodeList method implementations>>
+<<EdgeList method implementations>>
 @
 Through magic of the C preprocessor and the macro-like facilities
 of {\em noweb}, we can easily define the inline functions
@@ -184,33 +193,33 @@ not show up in the function call traces of the profiler.
 <<*>>=
 #ifndef INLINE_NODELIST
 #define INLINE /*inline*/
-<<NodeList inline implementations>>
+<<EdgeList inline implementations>>
 #undef INLINE 
 #endif /*INLINE_NODELIST*/
 @
-The header defines the [[NodeList]] class, its member functions, member
+The header defines the [[EdgeList]] class, its member functions, member
 data, and inline functions.  Again, we have more boiler-plate.
 <<header>>=
 #ifndef NODELIST_H
 #define NODELIST_H
 #include "types.h"
 
-class NodeList 
+class EdgeList 
 {
-    <<NodeList methods>>
-    <<NodeList debug methods>>
+    <<EdgeList methods>>
+    <<EdgeList debug methods>>
 protected:
-    <<NodeList internal methods>>
+    <<EdgeList internal methods>>
 private:
-    <<NodeList data>>
+    <<EdgeList data>>
 };
-@ %def NodeList
+@ %def EdgeList
 In case we want the inline functions to really be inlined, we
 also define them here in the header file.
 <<header>>=
 #ifdef INLINE_NODELIST
 #define INLINE inline
-<<NodeList inline implementations>>
+<<EdgeList inline implementations>>
 #undef INLINE 
 #endif /*INLINE_NODELIST*/
 

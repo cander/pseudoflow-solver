@@ -13,7 +13,13 @@ number, which remains constant during the execution of the algorithm.
 #include "types.h"
 <<default Node constructor>>=
     id = -1;  label = -1;
-@
+<<Node methods>>=
+public:
+    NodeId getId() const;
+<<Node inline implementations>>=
+INLINE NodeId Node::getId() const
+{ return id; }
+@ %id label getId
 As the algorithm progesses, the we check the label and increment it
 by one.
 <<Node methods>>=
@@ -53,18 +59,18 @@ To represent the graph, each node needs to store an list of neighbors.
 To represent the tree, each node has list of children, which allows
 us to search from the root down the tree.  
 <<Node data>>=
-    NodeList	neighbors;
-    NodeList	children;
+    EdgeList	neighbors;
+    EdgeList	children;	
 <<header include files>>=
-#include "NodeList.h"
+#include "EdgeList.h"
 @ %def neighbors children
 We can nodes add to these lists.  Adding a neighbor simply adds
 it to the neighbor list.  
 <<Node methods>>=
-    void addNeighbor(NodePtr nodep);
+    void addNeighbor(EdgePtr nodep);
 <<Node method implementations>>=
-void Node::addNeighbor(NodePtr nodep)
-{ neighbors.appendNode(nodep); }
+void Node::addNeighbor(EdgePtr edgep)
+{ neighbors.appendEdge(edgep); }
 @ %def addNeighbor
 In order to scan from a node back up to the root, each node needs
 to have a pointer to its parent.  During push operations, we also
@@ -104,11 +110,58 @@ And finally, we update set the child's parent edge.
 <<Node method implementations>>=
 void Node::addChild(NodePtr child, Edge& edge)
 {
-    children.appendNode(child);
+    children.appendEdge(&edge);
     edge.setDirectionTo(this);
     child->parentEdge = &edge;
 }
 @ %def addChild
+Rehanging a tree from a node involves reversing the
+parent-child relationship between nodes along the
+path from the new root node up to the existing
+root.  
+
+At the center of the parent-child relationship is the edge between
+the parent and child.  This is the [[parentEdge]] in the current
+node ([[this]]), and it is stored the [[children]] list in the
+parent node.  We remove the edge from our parent's list of children
+and recursively tell the parent to rehang itself.  Once the tree
+is rehung by the parent, we install as a sub-tree under our node
+by by setting the parent's [[parentEdge]] pointer to the edge and
+adding the edge to our children list.  Since we reversed the
+orientation of the two nodes, we need to toggle the direction of
+the edge.  Finally, the current node is the root of a sub-tree, so
+its parent edge is set to [[nil]].
+
+As indicated, the code is written as a recursive function because
+it is easiest to code that way.  In the future, if the function
+call overhead becomes a bottleneck, we can recode it iteratively.
+
+In this code, we will take advantage of the fact that we know we
+must have been iterating through the children arrays of the nodes
+along the path to get to a node that we are going to rehang by.
+For a given node, $v$, we know that $v$ must be the current node
+in the children array of the parent of $v$.  This makes it simple
+and fast to find $v$ in its parent's children array.
+
+<<Node methods>>=
+    void rehang();
+<<Node method implementations>>=
+void Node::rehang()
+{
+    NodePtr parentNode = getParentNode();
+    if (parentNode != nil) {
+	assert (label == parentNode->label);
+	EdgePtr edge = parentEdge;
+	parentNode->children.removeCurrentElement(edge);
+	parentNode->rehang();
+
+	parentNode->parentEdge = edge;
+	children.addCurrentElement(edge);
+	edge->toggleOrientation();
+	parentEdge = nil;
+    }
+}
+@
 We need a default constructor because we will be creating an
 array of nodes in bulk when we know how many of them are
 in the graph.
@@ -163,8 +216,9 @@ void Node::printTree(int level)
     int numChildren = children.getSize();
     int childLevel = level + 1;
     for (int i = 0; i < numChildren; i++) {
-	NodePtr child = children.getElement(i);
-	if (child != nil) {
+	EdgePtr childEdge = children.getElement(i);
+	if (childEdge != nil) {
+	    NodePtr child = childEdge->getOtherNode(this);
 	    child->printTree(childLevel);
 	}
     }
@@ -178,12 +232,19 @@ void printTree(Node* n)
 @
 Sometimes, we also need to check the consistency of the tree,
 especially after operations like rehanging the tree.
+The code recursively explores the tree in pre-order to validate
+the pointers from a child node back to its parent and vice versa.
+For each node, we check its parent edge pointer then investigate
+the children.  As soon as we detect any error in the tree, we
+stop immediately, since there may be zillions of errors, which would
+swamp the output that we look at.
 <<debugging functions>>=
-    Boolean checkTree(Node* expectedParent);
+    Boolean checkTree(EdgePtr expectedParentEdge);
 <<Node method implementations>>=
-Boolean Node::checkTree(Node* expectedParent)
+Boolean Node::checkTree(EdgePtr expectedParentEdge)
 {
     Boolean treeOK = TRUE;
+    cout << id << " ";
     <<check parent pointers>>
 
     if (treeOK) {
@@ -192,33 +253,45 @@ Boolean Node::checkTree(Node* expectedParent)
 
     return treeOK;
 }
-@
-Explain this.
+@ %def checkTree
+First we check our pointer to our parent.  This could be [[nil]] if
+we are a root, otherwise it better bet the same edge that our parent
+tells us it should be.  Furthermore, the edge should point from us
+(the tail) up to our parent.
 <<check parent pointers>>=
-    if (expectedParent != nil) {
-	Node* foundParent = getParentNode();
-	if (foundParent != expectedParent) {
-	    cout << "Error: node " << id << " parent pointer wrong. "
-	         << " expected " << expectedParent->id 
-		 << " found " << foundParent->id << endl;
+    if (expectedParentEdge != nil) {
+	if (parentEdge != expectedParentEdge) {
+	    cout << "\nError: node " << id << " parent edge wrong. "
+	         << " expected " << expectedParentEdge << endl
+		 << " \tfound " << parentEdge << endl;
 	    treeOK = FALSE;
+	} else {
+	    if (parentEdge->getTail() != this) {
+		cout << "\nError: node " << id 
+		     << " parent edge orientation wrong: "
+		     << parentEdge << endl;
+		treeOK = FALSE;
+	    }
 	}
-	Node* self = getParentEdge()->getOtherNode(foundParent);
-	if (self != this) {
-	    cout << "Error: node " << id << " parent back pointer wrong. "
-	         << " expected (this) " << id 
-		 << " found (parent other) " << self->id << endl;
-	    treeOK = FALSE;
+    } else {
+	if (parentEdge != nil) {
+		cout << "\nError: node " << id 
+		     << " expected nil parent edge, found: "
+		     << parentEdge << endl;
+		treeOK = FALSE;
 	}
     }
 @
-Explain this too.
+To investigate the children, we just iterate over our list of children
+and check each of them in turn.  We must skip holes in the list
+(denoted by [[nil]] entries).
 <<check child pointers>>=
     int numChildren = children.getSize();
     for (int i = 0; i < numChildren; i++) {
-	NodePtr child = children.getElement(i);
-	if (child != nil) {
-	    treeOK = child->checkTree(this);
+	EdgePtr childEdge = children.getElement(i);
+	if (childEdge != nil) {
+	    NodePtr childNode = childEdge->getOtherNode(this);
+	    treeOK = childNode->checkTree(childEdge);
 	    if (treeOK == FALSE) {
 		break;
 	    }
