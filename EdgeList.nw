@@ -421,7 +421,7 @@ class ElIterator
 public:
     <<ElIterator public declarations>>
 private: 
-    ElIteator();
+    ElIterator();
 };
 @ %def EdgeList
 In case we want the inline functions to really be inlined, we
