@@ -7,6 +7,9 @@ destination Nodes.
     FlowAmount	flow;
     Node*	source;
     Node*	dest;
+<<default Edge constructor>>=
+    capacity = flow = 0;
+    source = dest = nil;
 @ %def capacity flow source dest
 For the purposes of the algorithm, an edge has an orientation that
 idicates which direction we are pushing additional flow - i.e.
@@ -14,6 +17,8 @@ from child towards parent.  This allows us to define the residual
 capacity with respect to the current orientation.
 <<Edge data>>=
     Boolean	isForward;
+<<default Edge constructor>>=
+    isForward = TRUE;
 @ %def isForward
 <<Edge methods>>=
 public:
@@ -51,7 +56,32 @@ want to be able to get the other node.
 INLINE NodePtr Edge::getOtherNode(const NodePtr node) const
 { return (node == source) ? dest : source; }
 @ %def getOtherNode
+We need a default constructor because we will be creating an
+array of edges in bulk when we know how many of them are
+in the graph.
+<<Edge methods>>=
+    Edge();
 <<Edge method implementations>>=
+Edge::Edge()
+{
+    <<default Edge constructor>>
+}
+@
+After constructing an edge, we will need to initialize it.  
+The default orientation will be from the source to the destination.
+<<Edge methods>>=
+    void init(Node* src, Node* dst, FlowAmount cap);
+<<Edge method implementations>>=
+void Edge::init(Node* src, Node* dst, FlowAmount cap)
+{
+    source = src;
+    dest = dst;
+    flow = 0;
+    capacity = cap;
+    isForward = TRUE;
+}
+@ %def init
+
 <<Edge header include files>>=
 <<C++ overhead>>=
 @
