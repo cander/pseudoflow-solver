@@ -247,7 +247,7 @@ Boolean Edge::setInitialCapacity(double lambda)
 #ifdef PARAM_SENSE
     FlowAmount newCapacity = (FlowAmount)(aParam + bParam * lambda);
     negative = (newCapacity < 0) ? TRUE : FALSE;
-    capacity = abs(newCapacity);
+    capacity = iabs(newCapacity);
 #endif PARAM_SENSE
 
     return negative;
@@ -280,7 +280,7 @@ Boolean Edge::increaseLambda(double oldLambda, double newLambda, FlowAmount& del
     FlowAmount oldCapacity  = (FlowAmount)(aParam + bParam * oldLambda);
     FlowAmount newCapacity  = (FlowAmount)(aParam + bParam * newLambda);
     delta = newCapacity - oldCapacity;
-    capacity = abs(newCapacity);
+    capacity = iabs(newCapacity);
     crossedZero = ((oldCapacity < 0) && (newCapacity > 0)) ? TRUE : FALSE;
 #endif PARAM_SENSE
 
