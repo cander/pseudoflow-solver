@@ -157,6 +157,20 @@ ostream& operator<<(ostream& out, const Edge& edge)
 <<Edge header include files>>=
 class ostream;
 @
+We also need to print the flow data in Dimacs format.  Since we
+already used the insertion operator, we'll just define a `normal'
+method.
+<<Edge methods>>=
+    ostream& writeFlow(ostream& out);
+<<Edge method implementations>>=
+ostream& Edge::writeFlow(ostream& out)
+{ 
+    return out << "f     " 
+	       << setw(8) << source->getId() 
+	       << setw(8) << dest->getId() 
+	       << setw(8) << flow;
+}
+@ %def writeFlow
 Here's another debugging function that just validates that a given
 edge is in fact and edge between two specified nodes.  We don't care
 which is the source or destination.  If the edge or nodes are not 
