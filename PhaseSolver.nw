@@ -1526,7 +1526,7 @@ void PhaseSolver::saturateSourceSinkArcs()
 {
     for (int i = 0 ; i < numEdges; i++) {
 	Edge& edge = edges[i];
-	if ((edge.getSource() == sourceNode) ||
+	if ((edge.getSource() == sourceNode) &&
 	    (edge.getDest() == sinkNode))
 	{
 	    edge.saturate();
@@ -1984,6 +1984,13 @@ so we add them back.
 	Edge& edge = edges[i];
 	Node& edgeSource = *edge.getSource();
 	Node& edgeDest = *edge.getDest();
+
+	if ((edge.getSource() == sourceNode) &&
+	    (edge.getDest() == sinkNode))
+	{
+	    continue;
+	}
+
 	if (&edgeSource == sourceNode) {
 	    edgeDest.addNeighbor(edge);
 	} 
