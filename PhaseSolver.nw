@@ -354,7 +354,7 @@ Boolean PhaseSolver::weakPush(Node& src)
 
     while (parent != nil) {
 	Boolean performedSplit = currNode->pushToParent();
-	currNode->flag = 0;
+	currNode->clearFlag(DEFERRED);
 	<<check for zero-capcity split>>
 
 	if (performedSplit) {
@@ -371,7 +371,7 @@ Boolean PhaseSolver::weakPush(Node& src)
     }
 
     CHECK_TREE(*currNode, nil);
-    currNode->flag = 0;
+    currNode->clearFlag(DEFERRED);
 
     <<check for weak root becoming strong>>
     return result;
@@ -770,8 +770,8 @@ to it.
 void PhaseSolver::strongOnlyRenormalize(Node& strongRoot, Node& weakNode)
 {
     strongPush(strongRoot, weakNode);
-    if (weakNode.flag == 0) {
-	weakNode.flag = 1;
+    if (weakNode.flagIsSet(DEFERRED) == FALSE) {
+	weakNode.setFlag(DEFERRED);
 	weakNode.next2 = deferredNodes;
 	deferredNodes = &weakNode;
     }
@@ -779,6 +779,7 @@ void PhaseSolver::strongOnlyRenormalize(Node& strongRoot, Node& weakNode)
 @ %def strongOnlyRenormalize
 <<Solver data>>=
     NodePtr deferredNodes;
+    static const int DEFERRED = 0x10;
 <<default Solver constructor>>=
     deferredNodes = nil;
 @ %def deferredNodes
@@ -1572,6 +1573,7 @@ in an optimal solution, but these do not have to be added back.
 	    Node& srcAdjNode = *edge.getDest();
 	    srcAdjNode.removeNeighbor(edge);
 	    srcAdjNode.incrementExcess(excess);
+	    srcAdjNode.setFlag(SOURCE_ADJ);
 	}  else if (edge.getDest() == sourceNode) {
 	    // edge into source never used
 	    edge.getSource()->removeNeighbor(edge);
@@ -1581,10 +1583,15 @@ in an optimal solution, but these do not have to be added back.
 	    Node& sinkAdjNode = *edge.getSource();
 	    sinkAdjNode.decrementExcess(excess);
 	    sinkAdjNode.removeNeighbor(edge);
+	    sinkAdjNode.setFlag(SINK_ADJ);
 	} else if (edge.getSource() == sinkNode) {
 	    // edge out of sink never used
 	    edge.getDest()->removeNeighbor(edge);
 	}
+<<Solver data>>=
+    static const int SOURCE_ADJ = 0x100;
+    static const int SINK_ADJ = 0x200;
+    static const int ADJACENT = SOURCE_ADJ | SINK_ADJ;
 @
 Again, since determining the initial status of nodes is apt
 to be a common subroutine of many initialization procedures,
@@ -1995,6 +2002,7 @@ void PhaseSolver::buildSpTree()
 	<<build weak branch>>
     }
 
+    //setSpInitialNodeStatus();
     setInitialNodeStatus();
 }
 @ %def buildSpTree
@@ -2083,7 +2091,56 @@ void PhaseSolver::relabelChildren(Node& node)
     }
 }
 @ %def relabelChildren
+Once we have built the weak trees, we need to establish the initial status
+of all nodes.  We don't want to use the usual function, 
+[[setInitialNodeStatus]], because it will set all the  weak labels to one
+even though we have just established exact distance labels.  Similarly,
+we don't want the strong nodes to all have label two because their
+(weak) neighbors all have labels much higher.  Therefore, we have our
+own function to establish the status of the nodes.
 
+The weak nodes are already correctly labeled, we just need to set the
+label count appropriately.  For the strong nodes, we need to find the 
+minimum label of its weak neighbors, and we also need to add it as a strong
+branch.
+<<Solver methods>>=
+    void setSpInitialNodeStatus();
+<<Solver method implementations>>=
+void PhaseSolver::setSpInitialNodeStatus()
+{
+    for (int i = 1; i <= numNodes; i++) {
+	Node& node = nodes[i];
+	if (node.getExcess() > 0) {
+	    <<set label to minimum of weak neighbors>>
+	    addStrongBranch(node);
+	} 
+	labelCount[node.getLabel()]++;
+	node.resetIterations();
+    }
+}
+@ %def setSpInitialNodeStatus
+For a strong node, we iterate over its neighbors looking for nodes with
+non-positive excess and find the minimum label.  We then set the label
+to the minimum plus 1.
+{\em We don't really care about in/out arcs, but source/sink node could
+still be a problem?}
+<<set label to minimum of weak neighbors>>=
+    NodeLabel minLabel = MAXINT;
+    for (node.resetIterations();
+	 node.hasMoreNeighbors();
+	 node.advanceNeighbors())
+    {
+	Edge& neighborEdge = node.getCurrentNeighbor();
+	Node& neighbor = *neighborEdge.getOtherNode(&node);
+	if (neighbor.getExcess() <= 0) {
+	    if (minLabel > neighbor.getLabel()) {
+		minLabel = neighbor.getLabel();
+	    }
+	}
+    }
+    assert(minLabel < numNodes);
+    node.setLabel(minLabel + 1);
+@
 \subsection{Recovering a Feasible Flow}
 When the pseudoflow algorithm completes, there are no merger arcs between
 the strong nodes and weak nodes, and there is excess at the roots of
@@ -2112,7 +2169,7 @@ void PhaseSolver::convertToFlow()
     currentMark = 1024;
     <<replace source and sink arcs>>
     returnSinkAdjDeficit();
-    returnSourceAdjExcess();
+    // returnSourceAdjExcess();		XXX - broken!?!
 
     for (int i = 1; i <= numNodes; i++) {
 	Node& node = nodes[i];
@@ -2121,6 +2178,11 @@ void PhaseSolver::convertToFlow()
 	}
 	if (node.getExcess() != 0) {
 	    pushRootExcess(node);
+	}
+
+	FlowAmount ex = node.computeExcess();
+	if (ex != 0) {
+	    cout << "Non-zero excess on node " << i << " = " << ex <<endl;
 	}
     }
 }
@@ -2222,7 +2284,7 @@ than recursively.  Theoretically, this should yeild better performance.
 <<find bottleneck capacity to strong root>>=
     Node* currNode = &srcAdjNode;
     while (currNode->isRootNode() == FALSE) {
-	FlowAmount parentCap = currNode->getParentDownCapacity();
+	FlowAmount parentCap = currNode->getParentEdge()->getFlow();
 	if (parentCap < bottleCap) {
 	    bottleCap = parentCap;
 	}
