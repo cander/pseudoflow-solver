@@ -329,7 +329,7 @@ INLINE Boolean Node::pushToParent()
 {
     assert(parentEdge != nil);
     Edge& edge = *parentEdge;
-    assert(parentNode->excess <= 0);
+    //assert(parentNode->excess <= 0);
     assert(edge.residCapacity() >= 0);
 
     if (edge.residCapacity() >= excess) {
@@ -387,6 +387,9 @@ void Node::init(NodeId id, int numNeighbors)
 <<Node data>>=
 public:
     static const int INITIAL_LABEL = 0;
+    int flag;
+<<default Node constructor>>=
+    flag = 0;
 @ init
 \subsection{Debugging}
 To aid in debugging the tree and graph manipulation functions,
@@ -431,6 +434,7 @@ void Node::printTree(int level)
 }
 @ %def printTree
 Here's a 'C' version of the function that we can call from {\em gdb}.
+<<Node method implementations>>=
 void printTree(Node* n)
 {
     n->printTree(0);
