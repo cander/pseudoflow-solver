@@ -80,14 +80,24 @@ INLINE void Edge::increaseFlow(FlowAmount amt)
 }
 @ %def increaseFlow
 We need to to define the residual
-capacity with respect to the current orientation.
+capacity with respect to the current orientation and from one node
+to the other.
 <<Edge methods>>=
 public:
     FlowAmount residCapacity() const;
+    FlowAmount residCapacity(const Node& node) const;
 <<Edge inline implementations>>=
 INLINE FlowAmount Edge::residCapacity() const
 { 
     if (isForward) {
+	return capacity - flow;
+    } else {
+	return flow;
+    }
+}
+INLINE FlowAmount Edge::residCapacity(const Node& node) const
+{ 
+    if (&node == source) {
 	return capacity - flow;
     } else {
 	return flow;
