@@ -143,7 +143,6 @@ Boolean PhaseSolver::processSubtree(Node& node)
 
     // no merger
     incrementLabel(node);
-    node.resetIterations();
     STATS(numEmptyScans++);
     TRACE(trout << "node " << node.getId() << " relabled to "
 		<< node.getLabel() << endl;);
@@ -204,10 +203,11 @@ Back in [[processSubtree]] we had a simple method call to increment
 the label on a node.  Normally, we would just call [[incrementLabel]]
 on the node, but we want to track how many nodes we have with each
 label so that we can terminate the algorithm early.
+Also, any time we increment the label, we need to reset the iterations
+too, so we do that here.
 <<Solver methods>>=
     void incrementLabel(Node& node);
-@
-When the label of a node is incremented, we decrement the old label
+@ When the label of a node is incremented, we decrement the old label
 count by one and increment the new label count.
 <<Solver inline implementations>>=
 INLINE void PhaseSolver::incrementLabel(Node& node)
@@ -218,6 +218,7 @@ INLINE void PhaseSolver::incrementLabel(Node& node)
     labelCount[l + 1]++;
 #endif /* COUNT_LABELS */
     node.incrementLabel();
+    node.resetIterations();
 }
 @ %def incrementLabel
 When we know that a branch cannot merge with
@@ -245,7 +246,6 @@ void PhaseSolver::relabelSubtree(Node& node)
     }
 
     incrementLabel(node);
-    node.resetIterations();
     TRACE(trout << "node " << node.getId() << " Relabled to "
 		<< node.getLabel() << endl;);
 }
@@ -2433,7 +2433,7 @@ Now, we'll add the simplex solver methods.
 <<*>>=
     <<Simplex implementations>>
 @
-The header defines the [[Solver]] class, its member functions, member
+The header defines the [[PhaseSolver]] class, its member functions, member
 data, and inline functions.  Again, we have more boiler-plate.
 <<header>>=
 #ifndef SOLVER_H
@@ -2441,13 +2441,19 @@ data, and inline functions.  Again, we have more boiler-plate.
 #include "types.h"
 #include "Node.h"
 <<header include files>>
-
+@ We have used some pointer to member function types to select run-time
+behavior.
+<<header>>=
 class PhaseSolver;
 typedef void (PhaseSolver::* AddBranchPtr)(Node& root);
 typedef void (PhaseSolver::* RenormalizePtr)(Node& strongRoot, Node& weakNode);
-
-<<Node Bucket definition>>
-
+@ %def AddBranchPtr RenormalizePtr
+Then, we need to define the node buckets before we use them.
+<<header>>=
+    <<Node Bucket definition>>
+@ 
+Now, we can finally get to defining the solver.
+<<header>>=
 class PhaseSolver 
 {
 public:
@@ -2456,11 +2462,11 @@ public:
     <<C++ overhead>>
     <<public Solver data>>
 protected:
-<<Solver protected memebers>>
+    <<Solver protected memebers>>
 private:
     <<Solver data>>
 };
-@ %def Solver
+@ %def PhaseSolver
 In case we want the inline functions to really be inlined, we
 also define them here in the header file.
 <<header>>=
