@@ -86,7 +86,7 @@ public:
 INLINE void Edge::increaseFlow(FlowAmount amt)
 { 
     if (isForward) {
-	assert ((capacity - flow) >= amt);
+	assert((capacity - flow) >= amt);
 	flow += amt;
     } else {
 	assert(flow >= amt);
@@ -95,7 +95,8 @@ INLINE void Edge::increaseFlow(FlowAmount amt)
 }
 @ %def increaseFlow
 For simplex mergers, we need to be able to decrease the flow on an
-arc.  This is pretty trivial using [[increaseFlow]].
+arc with respect to its current orientation.  This is pretty 
+trivial using [[increaseFlow]].
 <<Edge methods>>=
 public:
     void decreaseFlow(FlowAmount amt);
@@ -105,6 +106,19 @@ INLINE void Edge::decreaseFlow(FlowAmount amt)
     increaseFlow(-amt);
 }
 @ %def decreaseFlow
+Another similar method is used during flow recovery is to reduce the
+flow amount regardless of its orientation.  We assume that
+the caller has already used [[reductionCapacity]] to check this
+edge.
+<<Edge methods>>=
+    void reduceFlow(FlowAmount amt);
+<<Edge inline implementations>>=
+INLINE void Edge::reduceFlow(FlowAmount amt)
+{ 
+    assert(amt <= flow);
+    flow -= amt;
+}
+@ %def reduceFlow
 To support converting pseudoflows to flows, we also allow decreasing
 the flow from one node to the other, regardless of orientation.
 <<Edge methods>>=
@@ -146,6 +160,23 @@ INLINE FlowAmount Edge::residCapacity(const Node& node) const
     }
 }
 @ %def residCapacity
+During flow recovery, we look for path with residual capacity that 
+only involve reducing the flow on arcs.  We encounter the edges
+as either in or out arcs, so we are looking for capacity with
+respect to a certain node.  So, the capacity is either the existing
+flow or zero.
+<<Edge methods>>=
+    FlowAmount reductionCapacity(const Node& fromNode) const;
+<<Edge inline implementations>>=
+INLINE FlowAmount Edge::reductionCapacity(const Node& fromNode) const
+{ 
+    if (&fromNode == source) { 
+	return flow;
+    } else {
+	return 0;
+    }
+}
+@ %def reductionCapacity
 We need a default constructor because we will be creating an
 array of edges in bulk when we know how many of them are
 in the graph.
@@ -177,7 +208,7 @@ source- and sink-adjacent edges.
     FlowAmount saturate();
 <<Edge method implementations>>=
 FlowAmount Edge::saturate()
-{ flow = capacity; return flow; }
+{ assert(flow == 0); flow = capacity; return flow; }
 @ %def saturate
 We need a way to print the contents of an edge to an output stream,
 mostly for debugging.
