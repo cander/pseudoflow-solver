@@ -1615,6 +1615,7 @@ void PhaseSolver::setInitialNodeStatus()
 		addStrongBranch(node);
 	    }
 	}
+	node.resetIterations();
     }
     // assert(labelCount[INIT_WEAK_LABEL] + 
    //          labelCount[INIT_STRONG_LABEL] == numNodes);
@@ -1970,6 +1971,119 @@ void PhaseSolver::saturateAllArcs()
     setInitialNodeStatus();
 }
 @ %def saturateAllArcs
+\subsubsection{Shortest Path Initialization}
+Yet another, more complex initialization scheme is to start with
+the usual staturated source and sink arcs.  Then, we perform a 
+shortest-path search back from the sink linking all the zero-deficit
+nodes into weak branches along the shortest paths, very much 
+like Dijkstra's algorithm.  We use the node label as a distance
+label during this procedure.  When we are done, [[setInitialNodeStatus]]
+will fix up the labels.
+<<Solver methods>>=
+    void buildSpTree();
+<<Solver method implementations>>=
+void PhaseSolver::buildSpTree()
+{
+    saturateSourceSinkArcs();
+
+    <<initialize all node labels>>
+
+    for(sinkNode->resetIterations();
+        sinkNode->hasMoreNeighbors();
+	sinkNode->advanceNeighbors())
+    {
+	<<build weak branch>>
+    }
+
+    setInitialNodeStatus();
+}
+@ %def buildSpTree
+First, we need to set all the labels to infinity.
+<<initialize all node labels>>=
+    for (int i = 1; i <= numNodes; i++) {
+	nodes[i].setLabel(MAXINT);
+    }
+@ Then, we iterate over each sink-adjacent node.
+<<build weak branch>>=
+    Edge& edge = sinkNode->getCurrentNeighbor();
+    Node& edgeSource = *edge.getSource();
+    Node& edgeDest = *edge.getDest();
+    if ((&edgeSource == sourceNode) || (&edgeDest != sinkNode) ||
+	 (edgeSource.getExcess() >= 0))
+    {
+	continue;
+    }
+@ Once we're sure we a sink-adjacent node and it's not the source,
+we label it, and start investigating its neighbors.
+<<build weak branch>>=
+    edgeSource.setLabel(1);
+    buildSpBranch(edgeSource);
+    CHECK_TREE(edgeSource, nil);
+@  The real work of the search is done recursively in this function.
+It scans every neighbor looking for nodes with labels greater
+than what we can offer going via this node.
+<<Solver methods>>=
+    void buildSpBranch(Node& node);
+<<Solver method implementations>>=
+void PhaseSolver::buildSpBranch(Node& node)
+{
+    NodeLabel dist = node.getLabel() + 1;
+    for (node.resetIterations();
+	 node.hasMoreNeighbors();
+	 node.advanceNeighbors())
+    {
+	Edge& neighborEdge = node.getCurrentNeighbor();
+	Node& neighbor = *neighborEdge.getOtherNode(&node);
+	FlowAmount residCap = neighborEdge.residCapacity(neighbor);
+
+	if ((neighbor.getExcess() == 0) && (residCap > 0)) {
+	    if (neighbor.getLabel() > dist) {
+		<<add node to our branch>>
+		// recursively examine neighbor
+		buildSpBranch(neighbor);
+	    } else if ((neighbor.getLabel() == dist) &&
+	               (neighbor.getParentCapacity() < residCap))
+	    {
+		// we have more capacity for same label
+		<<add node to our branch>>
+		// don't examin neigbor if we have same label
+	    }
+	}
+    }
+}
+@ %def buildSpTree
+Adding a node to our branch involve removing it's current parent (if
+any) and adding it as a child of us.
+<<add node to our branch>>=
+    neighbor.setLabel(dist);
+    if (neighbor.isRootNode() == FALSE) {
+	neighbor.split();
+	relabelChildren(neighbor);
+    }
+    TRACE( trout << "attaching " << neighbor.getId() << " to " 
+                 << node.getId() << endl;)
+    node.addChild(neighbor, neighborEdge);
+@ One glaring inefficiency of this plan is that if we change the
+parent of a node, we then have to go through an relabel its 
+children.  ({\em I must be doing something lame}).  Hopefully,
+this won't happen very often.
+<<Solver methods>>=
+    void relabelChildren(Node& node);
+<<Solver method implementations>>=
+void PhaseSolver::relabelChildren(Node& node)
+{
+    NodeLabel dist = node.getLabel() + 1;
+    for (node.resetIterations();
+	 node.hasMoreChildren();
+	 node.advanceChildren())
+    {
+	Node& child = node.getCurrentChild();
+	child.setLabel(dist);
+	relabelChildren(child);
+    }
+}
+@ %def relabelChildren
+
 \subsection{Recovering a Feasible Flow}
 When the pseudoflow algorithm completes, there are no merger arcs between
 the strong nodes and weak nodes, and there is excess at the roots of
@@ -2279,7 +2393,7 @@ void PhaseSolver::reduceFlow(Node& from, Edge& edge, FlowAmount amt)
 {
     edge.reduceFlow(amt);
 
-    if (edge.reductionCapacity(from) == 0) {
+    if (edge.getFlow() == 0) {
 	from.removeNeighbor(edge);
     }
 }
@@ -2763,7 +2877,6 @@ We start with the boiler-plate implementation file.
 #include <fstream.h>
 #include <iomanip.h>
 #include <assert.h>
-#include <values.h>
 <<implementation header files>>
 
 <<Solver method implementations>>
