@@ -220,26 +220,39 @@ and fast to find $v$ in its parent's children array.
 NodePtr Node::rehang()
 {
     NodePtr oldRoot = nil;
-    NodePtr parentNode = getParentNode();
 
-    if (parentNode != nil) {
-	assert(label == parentNode->label);
-	assert(parentNode != this);
+    if (parentEdge != nil) {
+	NodePtr currNode = this;
 	EdgePtr edge = parentEdge;
-	parentNode->children.removeCurrentElement(edge);
-	oldRoot = parentNode->rehang();
-
-	parentNode->parentEdge = edge;
-	children.addCurrentElement(edge);
-	edge->toggleOrientation();
+	NodePtr parentNode = getParentNode();
 	parentEdge = nil;
+
+	while (parentNode != nil) {
+	    assert(currNode->label == parentNode->label);
+	    assert(parentNode != currNode);
+	    EdgePtr nextEdge = parentNode->getParentEdge();
+
+	    parentNode->children.removeCurrentElement(edge);
+	    parentNode->parentEdge = edge;
+	    currNode->children.addCurrentElement(edge);
+	    edge->toggleOrientation();
+
+	    if (nextEdge != nil) {
+		currNode = parentNode;
+		edge = nextEdge;
+		parentNode = edge->getOtherNode(currNode);
+	    } else {
+		oldRoot = parentNode;
+		break;
+	    }
+	}
     } else {
 	oldRoot = this;
     }
 
     return oldRoot;
 }
-@
+@ %def rehang
 In addition to the tree structure and a Node's neighbors, we need
 to build a linked list of nodes for use by the solver.  This
 is a simple, singly-linked list with one pointer to the next
