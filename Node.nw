@@ -604,16 +604,43 @@ tells us it should be.  Furthermore, the edge should point from us
 	    if (parentEdge->getTail() != this) {
 		cout << "\nError: node " << id 
 		     << " parent edge orientation wrong: "
-		     << parentEdge << endl;
+		     << *parentEdge << endl;
 		treeOK = FALSE;
+	    } else {
+		if (parentEdge->getHead() != parentNode) {
+		    cout << "\nError: node " << id 
+			 << " parent edge does not match parentNode" << endl;
+		    treeOK = FALSE;
+		}
 	    }
 	}
+	<<check parent's children>>
     } else {
 	if (parentEdge != nil) {
 		cout << "\nError: node " << id 
 		     << " expected nil parent edge, found: "
-		     << parentEdge << endl;
+		     << *parentEdge << endl;
 		treeOK = FALSE;
+	}
+    }
+@
+<<check parent's children>>=
+    if (treeOK) {
+	Boolean foundThis = FALSE;
+	int numChildren = parentNode->children.getSize();
+	for (int i = 0; i < numChildren; i++) {
+	    EdgePtr childEdge = parentNode->children.getElement(i);
+	    if (childEdge != nil) {
+		NodePtr childNode = childEdge->getOtherNode(parentNode);
+		if (childNode == this) {
+		    foundThis = TRUE;
+		    break;
+		}
+	    }
+	}
+	if (foundThis == FALSE) {
+	    cout << "\nError: node " << id << " can't find outself in "
+		 << "parent node " << parentNode->id << endl;
 	}
     }
 @
