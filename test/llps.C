@@ -28,6 +28,7 @@ usage()
     cerr << "\t -M   merger function: pseudo, simplex" << endl;
     cerr << "\t -N   normalization method: immed, delayed" << endl;
     cerr << "\t -O   search order: pre, post" << endl;
+    cerr << "\t -L   inital node labels: const sink deficit" << endl;
     cerr << "buildFlags: " << buildFlags << endl;
 }
 
@@ -36,17 +37,18 @@ main(int argc, char** argv)
 {
     Boolean dumpNodes = FALSE;
     Boolean writeFlow = FALSE;
-    void (PhaseSolver::* initFunc)() = &PhaseSolver::buildSimpleTree;
+    void (PhaseSolver::* initFunc)(LabelMethod) = &PhaseSolver::buildSimpleTree;
     void (PhaseSolver::* solverFunc)(AddBranchPtr) = &PhaseSolver::solve;
     AddBranchPtr addBranchFunc = &PhaseSolver::addBranchLifo;
     PhaseSolver* solver = new PhaseSolver();
     int numSplits = -1;
     Boolean postOrder = FALSE;
     float relabelFreq = 0.0;
+    LabelMethod labelMethod = LABELS_CONSTANT;
 
     // parse arguments
     int ch;
-    while ((ch = getopt(argc, argv, "dfg:tI:s:M:N:B:O:")) != EOF) {
+    while ((ch = getopt(argc, argv, "dfg:tI:s:M:N:B:O:L:")) != EOF) {
 	switch (ch) {
 	case 'd':
 	    dumpNodes = TRUE;
@@ -133,6 +135,20 @@ main(int argc, char** argv)
 	    }
 	    break;
 
+	case 'L':
+	    if (strcmp(optarg, "const") == 0) {
+		labelMethod = LABELS_CONSTANT;
+	    } else if (strcmp(optarg, "sink") == 0) {
+		labelMethod = LABELS_SINK_DIST;
+	    } else if (strcmp(optarg, "deficit") == 0) {
+		labelMethod = LABELS_DEFICIT_DIST;
+	    } else {
+		cerr << "Invalid pre/post order option " << optarg << endl;
+		usage();
+		return 1;
+	    }
+	    break;
+
 	default:
 	    usage();
 	    return 1;
@@ -196,7 +212,7 @@ main(int argc, char** argv)
     Timer solveTimer;
     treeTimer.start();
     solveTimer.start();			// tree time is part of solve
-    (solver->*initFunc)();
+    (solver->*initFunc)(labelMethod);
     treeTimer.stop();
 
     // solve
