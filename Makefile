@@ -89,7 +89,7 @@ buildinfo.c: . $(SOLVOBJS)
 # special build version for various purposes
 profile:
 	rm -f $(OBJECTS)
-	$(MAKE) OPTIONS="-pg -g" INLINE="$(PROFILE_INLINE)" all
+	$(MAKE) OPTIONS="-pg -g" LDPROF="-pg" INLINE="$(PROFILE_INLINE)" all
 
 trace:
 	rm -f $(OBJECTS)
