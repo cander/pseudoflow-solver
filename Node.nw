@@ -132,6 +132,7 @@ First, iterating over children:
     Boolean	hasMoreChildren();
     Node&	getCurrentChild();
     void	advanceChildren();
+    int 	getNumChildren();
 <<Node inline implementations>>=
 INLINE void Node::beginChildren()
 { children.beginIteration(); }
@@ -141,6 +142,8 @@ INLINE Node& Node::getCurrentChild()
 { return *(children.getCurrentElement()->getOtherNode(this)); }
 INLINE void Node:: advanceChildren()
 { children.advanceToNextElement(); }
+INLINE int Node:: getNumChildren()
+{ return children.getSize(); }
 @ %def beginChildren hasMoreChildren getCurrentChild advanceChildren
 And we have basically the same code for iterating over neighbors:
 <<Node methods>>=
@@ -378,9 +381,13 @@ can allocate the neighbor and children arrays.
 void Node::init(NodeId id, int numNeighbors)
 {
     this->id = id;
+    label = INITIAL_LABEL;
     neighbors.init(numNeighbors);
     children.init(numNeighbors + 3);
 }
+<<Node data>>=
+public:
+    static const int INITIAL_LABEL = 0;
 @ init
 \subsubsection{Debugging}
 To aid in debugging the tree and graph manipulation functions,
