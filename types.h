@@ -7,6 +7,7 @@ typedef int NodeId;
 
 typedef int NodeLabel;
 const NodeLabel MAX_LABEL = 999999999;
+const int MAXINT = 2147483647;		// 2^31 - 1
 
 // excess and flow have to be in the same units
 typedef int  FlowAmount;
