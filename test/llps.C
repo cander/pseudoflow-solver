@@ -107,6 +107,26 @@ main(int argc, char** argv)
     const char* instanceName = argv[optind];
     const char* outputName = argv[optind + 1];
 
+    ofstream dout(outputName, ios::out);
+    if (dout == nil) {
+	cerr << "Unable to open output file: " << outputName << endl;
+	return 1;
+    }
+
+    extern char* buildFlags;
+    extern char* buildDate;
+    dout << "c" << endl;
+    dout << "c  instance: " << instanceName << endl;
+    dout << "c  buildFlags: " << buildFlags << endl;
+    dout << "c  buildDate: " << buildDate << endl;
+    dout << "c  argv: ";
+    for (char** ap = argv; *ap != nil; ap++) {
+	dout << *ap << " ";
+    }
+    dout << endl;
+
+
+    time_t beginTime = time(0);
     Timer initTimer;
     initTimer.start();
     Boolean readOK =  solver->readDimacsInstance(instanceName);
@@ -114,59 +134,54 @@ main(int argc, char** argv)
 
     if (readOK) {
 	cout << "read problem instance OK" << endl;
-	Timer treeTimer;
-	Timer solveTimer;
-	solveTimer.start();
+	Timer totalTimer;
+	totalTimer.start();
 
+	// build initial tree
+	Timer treeTimer;
 	treeTimer.start();
 	(solver->*initFunc)();
 	treeTimer.stop();
 
+	// solve
+	Timer solveTimer;
+	solveTimer.start();
 	(solver->*solverFunc)(addBranchFunc);
 	solveTimer.stop();
 
+	if (dumpNodes) {
+	    solver->dumpNodes(dout);
+	}
+
+	// convert to flow
 	Timer convertTimer;
 	convertTimer.start();
 	solver->convertToFlow();
 	convertTimer.stop();
 
+	totalTimer.stop();
+
 	cout << "time to establish tree: " << treeTimer << endl;
 	cout << "done solving: " << solveTimer << endl;
 	cout << "time to convert flow: " << convertTimer << endl;
+	cout << "total time: " << totalTimer << endl;
 
-	ofstream dout(outputName, ios::out);
-	if (dout == nil) {
-	    cerr << "Unable to open output file: " << outputName << endl;
-	    return 1;
-	}
+	time_t endTime = time(0);
+	dout << "c  beginRun: " << ctime(&beginTime);
+	dout << "c  endRun: " << ctime(&endTime);
 
-	dout << "c" << endl;
-	dout << "c  instance: " << instanceName << endl;
-	time_t now = time(0);
-	dout << "c  runTime: " << ctime(&now);
-
-	extern char* buildFlags;
-	extern char* buildDate;
-	dout << "c  buildFlags: " << buildFlags << endl;
-	dout << "c  buildDate: " << buildDate << endl;
 	dout << "c  timeToInitialize: " << initTimer << endl;
 	dout << "c  timeToSolve: " << solveTimer << endl;
 	dout << "c  timeToFlow: " << convertTimer << endl;
-	dout << "c  argv: ";
-	for (char** ap = argv; *ap != nil; ap++) {
-	    dout << *ap << " ";
-	}
-	dout << endl;
+	dout << "c  totalTime: " << totalTimer << endl;
+
+	solver->writeStats(dout);
 
 	if (writeFlow) {
 	    solver->writeDimacsFlow(dout);
 	}
-	if (dumpNodes) {
-	    solver->dumpNodes(dout);
-	}
-
-	dout.close();
     }
+    dout.close();
 
     return 0;
 }
