@@ -46,12 +46,7 @@ void PhaseSolver::solve(AddBranchPtr addFunc)
     TRACE(int currentPhase = 0;)
     addBranchFunc = addFunc;
     renormalizeFunc = &PhaseSolver::fullRenormalize;
-    <<establish initial global relabel>>
-    if (relabelFrequency > 0.0) {
-	relabelCounter = numNodes;	// muliply by frequency?
-    } else {
-	relabelCounter = MAXINT;
-    }
+    initGlobalRelabel();
 
     NodePtr strongBranch = getLowestBranch();
     while (strongBranch != nil) {
@@ -65,33 +60,11 @@ void PhaseSolver::solve(AddBranchPtr addFunc)
 	<<terminate early based on counting labels>>
 	Boolean performedMerger = processBranch(*strongBranch);
 	STATS(performedMerger ? 0 : numEmptyBranchScans++ );
-	<<check for global relabel>>
+	checkForRelabel();
 	strongBranch = getLowestBranch();
     }
 }
 @ %def solve
-Periodically, we may wish to perform global relabeling operations.
-This is rather expensive, so we don't want to do it very often.
-Note that this chunk of code is shared between the immediate and 
-delayed solve functions.
-<<establish initial global relabel>>=
-    if (relabelFrequency > 0.0) {
-	relabelCounter = numNodes;	// muliply by frequency?
-    } else {
-	relabelCounter = MAXINT;
-    }
-<<check for global relabel>>=
-    if (numRelabels > relabelCounter) {
-	globalRelabel();
-	relabelCounter = numRelabels + (int)(numNodes * relabelFrequency);
-    }
-<<Solver data>>=
-    int relabelCounter;
-<<public Solver data>>=
-    float relabelFrequency;
-<<default Solver constructor>>=
-    relabelFrequency = 0.0;
-@ %def relabelCounter relabelFrequency
 For each possible value for a node's label, if we track the number of 
 nodes with that label, then it is possible to terminate the algorithm
 early.  If the lowest labeled strong branch has label $\ell$, and
@@ -848,7 +821,7 @@ void PhaseSolver::delayedNormalizeSolve(AddBranchPtr addFunc)
 {
     addBranchFunc = addFunc;
     renormalizeFunc = &PhaseSolver::strongOnlyRenormalize;
-    <<establish initial global relabel>>
+    initGlobalRelabel();
 
     int currentPhase = 0;
     NodePtr strongBranch = nil; 
@@ -889,7 +862,7 @@ which might lead to a lower phase, which is why we put it back.
     if (strongLabel != currentPhase) {
 	addStrongBranch(*strongBranch);	// should addHead
 	performDeferredNormalizations();
-	<<check for global relabel>>
+	checkForRelabel();
 @
 Now, we try again to get a new branch.  If the label is 
 different than the current phase, then we really are starting
@@ -2127,14 +2100,20 @@ void PhaseSolver::saturateAllArcs()
     setInitialNodeStatus();
 }
 @ %def saturateAllArcs
+\subsection{Distance Labeling}
+Taking a page from implementations of the push-relabel algorithm, we
+have code to establish and maintain our labels based on distances to
+the sink.  We can do this at initialization time and/or periodically
+during the execution.
 \subsubsection{Shortest Path Initialization}
-Yet another, more complex initialization scheme is to start with
+To use distance labels during initialization, we start with
 the usual staturated source and sink arcs.  Then, we perform a 
 shortest-path search back from the sink linking all the zero-deficit
-nodes into weak branches along the shortest paths, very much 
-like Dijkstra's algorithm.  We use the node label as a distance
-label during this procedure.  When we are done, [[setInitialNodeStatus]]
-will fix up the labels.
+nodes into weak branches along the shortest paths, via a breadth-first
+search.  We use the node label as a distance
+label during this procedure.  When we are done, [[setSpInitialNodeStatus]]
+will set the labels of the strong nodes based on the labels of their
+weak neighbors.
 <<Solver methods>>=
     void buildSpTree();
 <<Solver method implementations>>=
@@ -2276,16 +2255,69 @@ node.setLabel(minLabel);
 	node.setLabel(INIT_STRONG_LABEL);
     }
 @
-\subsection{Global Relabeling Heuristic}
-Taking a page from implementations of the push-relabel algorithm, we
-have code to periodically relabel weak nodes with exact distances to the 
-sink.  We cannot do this with strong nodes due to the need to preserve
-monotonicity within a strong branch.  However, while labeling nodes,
+\subsubsection{Global Relabeling Heuristic}
+During the execution of the algorithm, regardless of the initialization
+method used we can periodically relabel nodes based on their distances to the 
+sink in the residual graph.   Setting the labels this way `guides' the excess
+from the strong nodes toward the sink node.  Because global relabeling is 
+a rather expensive operation, we don't want to perform it too often.
+
+We cannot necessarily blindly set the
+labels to their distances because we wish to preserve 
+monotonicity within a branch.  While labeling nodes,
 if we discover that a strong branch cannot reach the sink, we can
 eliminate it from further processing.
-
 <<Solver methods>>=
     void globalRelabel();
+@ Before getting into the implementation of the the relabeling function, 
+let's define
+some small functions that we call from the solver loop to perform
+the global relabeling.  Global relabeling is invoked based on the number of
+relabels that the algorithm has (normally) performed.
+So, we will maintain a counter that we compare to the number relabels 
+to tell us when to trigger the global relabel.
+<<Solver data>>=
+    int relabelCounter;
+@ %def relabelCounter
+This is then set and updated as a factor of the number of nodes in the graph.
+A non-positive value means no relabeling.
+<<public Solver data>>=
+    float relabelFrequency;
+<<default Solver constructor>>=
+    relabelFrequency = 0.0;
+@ %def relabelFrequency
+Now, we can check the counter, and if needed perform the relabeling
+and `schedule' the next relabel.
+<<Solver methods>>=
+    void checkForRelabel();
+<<Solver inline implementations>>= 
+INLINE void PhaseSolver::checkForRelabel()
+{
+    if (numRelabels > relabelCounter) {
+	globalRelabel();
+	relabelCounter = numRelabels + (int)(numNodes * relabelFrequency);
+    }
+}
+@ %def checkForRelabel
+Then, we just need to schedule the first relabel operation.  If the frequency
+is zero, then we set the counter to MAXINT to prevent relabeling from
+ever happening.
+<<Solver methods>>=
+    void initGlobalRelabel();
+<<Solver inline implementations>>= 
+INLINE void PhaseSolver::initGlobalRelabel()
+{
+    if (relabelFrequency > 0.0) {
+	relabelCounter = numNodes;	// muliply by frequency?
+    } else {
+	relabelCounter = MAXINT;
+    }
+}
+@ %def initGlobalRelabel
+Now we can present the relabeling function, which is conceptually rather
+simple.  We initialize all the distances, then perform a BFS to set the
+distances to their new value.  Then we try to set the labels to match
+their distances, respecting monotonicity.
 <<Solver method implementations>>=
 void PhaseSolver::globalRelabel()
 {
@@ -2365,6 +2397,8 @@ immediately after saturating all arcs).
 
 To do this relabeling, we must iterate over all nodes in the graph looking 
 for roots because we don't track weak branches.  
+{\em Tracking weak branches wouldn't be too much work because we never create
+any new ones.  If we had a doubly-linked list it would be pretty simple.}
 <<relabel/remove each branch>>=
     for (int i = 1; i <= numNodes; i++) {
 	Node& node = nodes[i];
@@ -2377,7 +2411,7 @@ for roots because we don't track weak branches.
 		<<relabel/remove strong branch>>
 	    } else {
 		if (distance < numNodes) {
-		    relabelWeakBranch(node);
+		    relabelBranch(node);
 		}
 	    }
 	}
@@ -2386,31 +2420,33 @@ for roots because we don't track weak branches.
 the whole branch does too, and we can remove it from the bucket.
 We set the labels of all nodes in the branches to [[numNodes]] to
 prevent any strong branches from trying to merge with this branch.
-In the future, maybe we can relabel the strong branch???
 <<relabel/remove strong branch>>=
     NodeLabel oldLabel = node.getLabel();
     if ((distance == MAXINT) && (oldLabel < numNodes)) {
 	buckets[oldLabel].removeNode(node);
 	setBranchLabel(node, numNodes);
     }
-@ Here is a first attempt at relabeling strong nodes:
+@ If the label is less than MAXINT and less than the number of nodes, we
+can look at relabeling it (if the label is [[numNodes]] we already pruned 
+it).  If we change the label of the root, we need to move it to another
+bucket.
 <<relabel/remove strong branch>>=
     else if (oldLabel < numNodes) {
-	NodeLabel newLabel = relabelWeakBranch(node);
+	NodeLabel newLabel = relabelBranch(node);
 	if (newLabel != oldLabel) {
 	    assert(newLabel > oldLabel);
 	    buckets[oldLabel].removeNode(node);
 	    addStrongBranch(node);
 	}
     }
-@ This is a straightfoward, recursive DFS to set the labels of all nodes
+@ This is a straightfoward, recursive DFS of the children
+to set the labels of all nodes
 of a branch to a specified value.
 <<Solver methods>>=
     void setBranchLabel(Node& node, NodeLabel l);
 <<Solver method implementations>>=
 void PhaseSolver::setBranchLabel(Node& node, NodeLabel l)
 {
-    // XXX move this method to Node?  - can't: want to track node label counts
     TRACE( trout << "relabeling " << node.getId() << " from " 
 			 << node.getLabel() << " to " << l << endl; );
     setLabel(node, l);
@@ -2420,7 +2456,7 @@ void PhaseSolver::setBranchLabel(Node& node, NodeLabel l)
     }
 }
 @ %def setBranchLabel
-To relabel a weak ({\em or strong?}) branch, we need to respect the 
+To relabel a branch, we need to respect the 
 monotonicity in the tree.  In a weak branch, monotonicity doesn't
 matter so long as the branch stays weak, but if it later becomes strong,
 we must have monotonicity for the rest of the implementation to work.
@@ -2428,21 +2464,24 @@ Ideally, we'd like to increase our label to match our distance.  However,
 our new label cannot be higher than any of our children.  So, first
 we recursively set the labels of our children and in the process compute
 the minimum label among them.  Then we update our own label.
+{\em we should profile and see if this should be an iterative DFS by
+converting the queue to a stack.}
 <<Solver methods>>=
-    NodeLabel relabelWeakBranch(Node& node);
+    NodeLabel relabelBranch(Node& node);
 <<Solver method implementations>>=
-NodeLabel PhaseSolver::relabelWeakBranch(Node& node)
+NodeLabel PhaseSolver::relabelBranch(Node& node)
 {
     NodeLabel minLabel = MAXINT;
     ElIterator it = node.getChildren();
     for (EdgePtr edge = it.getNext(); edge != nil; edge=it.getNext()) {
-	NodeLabel l = relabelWeakBranch(*edge->getOtherNode(&node));
+	NodeLabel l = relabelBranch(*edge->getOtherNode(&node));
 	if (l < minLabel) {
 	    minLabel = l;
 	}
     }
 
     if (minLabel == MAXINT) {
+	// node has no children
 	minLabel = (node.distance > node.getLabel()) ? node.distance : node.getLabel();
     }
     assert(minLabel >= node.getLabel());
@@ -2459,7 +2498,8 @@ NodeLabel PhaseSolver::relabelWeakBranch(Node& node)
 
     return node.getLabel();
 }
-@ %def relabelWeakBranch
+@ %def relabelBranch
+\subsubsection{Queue of Nodes}
 Here is a queue of nodes.  This ought to be moved to Node.nw.
 <<Solver data>>=
     NodePtr* nodeQ;
