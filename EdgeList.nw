@@ -135,6 +135,20 @@ INLINE void NodeList::removeCurrentElement(NodePtr nodep)
     array[currentIndex] = nil;
 }
 @ %def removeCurrentElement
+Here are some direct accessor methods for use during debugging.
+These really should be 'hidden' and shared only to [[friends]].
+<<NodeList debug methods>>=
+    int getSize() const;
+    NodePtr getElement(int i) const;
+<<NodeList method implementations>>=
+int NodeList::getSize() const
+{ return size; }
+NodePtr NodeList::getElement(int i) const
+{
+    assert(i < size);
+    return array[i];
+}
+@
 \subsubsection{File Boiler Plate}
 We start with the boiler-plate implementation file. 
 <<*>>=
@@ -168,6 +182,7 @@ data, and inline functions.  Again, we have more boiler-plate.
 class NodeList 
 {
     <<NodeList methods>>
+    <<NodeList debug methods>>
 protected:
     <<NodeList internal methods>>
 private:
