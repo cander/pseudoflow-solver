@@ -22,7 +22,8 @@ SRCS     = Node.h Node.C Edge.h Edge.C EdgeList.C EdgeList.h \
 	   PhaseSolver.C PhaseSolver.h \
 	   llps.C pllps.C gpps.C
 
-LIBOBJS  = Node.o Edge.o EdgeList.o PhaseSolver.o buildinfo.o 
+SOLVOBJS = Node.o Edge.o EdgeList.o PhaseSolver.o 
+LIBOBJS  = $(SOLVOBJS) buildinfo.o 
 OBJECTS  = $(LIBOBJS) llps.o pllps.o gpps.o
 
 LIBNAME	 = libpsa.a
@@ -80,7 +81,7 @@ clobber:	clean
 		rm -f $(SRCS)
 
 
-buildinfo.c: . $(LIBOBJS)
+buildinfo.c: . $(SOLVOBJS)
 	echo 'char* buildFlags = "'$(CFLAGS)'";' > buildinfo.c
 	echo 'char* buildDate = "'`date`'";' >> buildinfo.c
 
