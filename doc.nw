@@ -1,0 +1,38 @@
+\documentstyle[noweb,multicol,twoside]{article}
+\makeatletter
+\newenvironment{fields}{\@fields}{\crcr\egroup\par\end{quote}}
+\def\@fields{\@ifnextchar[{\@@fields}{\@@fields[4in]}}
+\def\@@fields[#1]{\begin{quote}\catcode`\_=\other
+        \tabskip=\leftmargin
+        \halign\bgroup\tt##\hfil\tabskip=2em&
+        {\hsize=#1\vtop{\noindent\raggedright\let\\=\cr
+                        \strut##\strut\par}}\tabskip=0pt\cr}
+\makeatother
+\pagestyle{noweb}\raggedbottom\noweboptions{shift}
+
+\title{ Lowest Label, Phase Pseudoflow Algorithm Source Code}
+\author{Charles Anderson}
+\begin{document}
+\maketitle
+\section*{Preface}
+Below is an implementation of the lowest label, phase variant
+of the pseudoflow algorithm.
+
+\tableofcontents
+
+\input{allcode.tex}
+
+\bibliographystyle{plain}
+\bibliography{web}
+
+\section{List of all chunks from all files}
+
+\nowebchunks
+
+\begin{multicols}{2}[\section{Index}]
+\nowebindex
+\end{multicols}
+
+\end{document}
+
+

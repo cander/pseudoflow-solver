@@ -1,0 +1,97 @@
+\section{Timer}
+The Timer is used to store timing
+information during the running of an algorithm.  
+The operations that one performs are: start the timer,
+stop it, and get the times.  
+<<Timer functions>>=
+public:
+    void start();
+    void stop();
+    void getTimes(float& wall, float& user, float& sys) const;
+@
+We will store CPU times (user and system) and ellapsed wall
+clock time.  We need both the start and stop times for these.
+<<Timer data>>=
+private:
+    struct tms		startCpu;
+    clock_t		startWall;
+    struct tms		stopCpu;
+    clock_t		stopWall;
+@ %def startCpu startWall stopCpu stopWall    
+<<header include files>>=
+#include <sys/times.h>
+@
+To start or stop a timer, we use the [[times(2)]], at least
+on Unix.
+<<Timer implementation>>=
+void
+Timer::start()
+{
+    startWall = times(&startCpu);
+}
+void
+Timer::stop()
+{
+    stopWall = times(&stopCpu);
+}
+@ %def start stop
+To get the time difference between the start and stop times,
+we just perform subtraction.
+<<Timer implementation>>=
+void 
+Timer::getTimes(float& wall, float& user, float& sys) const
+{
+    wall = (stopWall - startWall) / (float)CLK_TCK;
+    user = (stopCpu.tms_utime - startCpu.tms_utime) / (float)CLK_TCK;
+    sys  = (stopCpu.tms_stime - startCpu.tms_stime) / (float)CLK_TCK;
+}
+@ %def getTimes
+We also want to implement an [[operator<<]], to print the
+times onto an output stream.
+<<C++ overhead>>=
+    friend ostream& operator<<(ostream& out, const Timer& timer);
+<<header include files>>=
+class ostream;
+<<Timer implementation>>=
+ostream&
+operator<<(ostream& out, const Timer& timer)
+{
+    float wall, user, sys;
+    timer.getTimes(wall, user, sys);
+    out << "[" << wall << " wall, " 
+	<< user << ", user "
+	<< sys << " sys]";
+    return out;
+}
+@
+Of course we need to construct and initialize timers.
+<<C++ overhead>>=
+public: Timer();
+<<Timer implementation>>=
+Timer::Timer()
+{
+    stopWall = startWall = 0;
+    stopCpu.tms_utime = startCpu.tms_utime = 0;
+    stopCpu.tms_stime = startCpu.tms_stime = 0;
+}
+
+@
+Boiler-plate for the implementation file.
+<<*>>=
+#include "Timer.h"
+#include <time.h>
+#include <iostream.h>
+<<Timer implementation>>
+@
+Boiler-plate for the header file.
+<<header>>=
+#ifndef TIMER_H
+#define TIMER_H
+<<header include files>>
+class Timer
+{
+    <<Timer functions>>
+    <<Timer data>>
+    <<C++ overhead>>
+};
+#endif /*TIMER_H*/

@@ -1,0 +1,102 @@
+\section{Data Declarations}
+\subsection{Nodes in the Graph}
+Nodes belong to both the original, complete graph as well as
+the tree maintained by the solver.  Therefore, they have 
+neighbors (in the original graph), and a parent and children (in
+the tree).  In this lowest label implementation, they also have
+labels associated with them.  We identify nodes by an id or node
+number, which remains constant during the execution of the algorithm.
+<<Node data>>=
+    NodeId	id;
+    NodeLabel	label;
+<<header include files>>=
+#include "types.h"
+@
+As the algorithm progesses, the we check the label and increment it
+by one.
+<<Node methods>>=
+public:
+    NodeLabel getLabel() const;
+    void incrementLabel();
+<<Node inline implementations>>=
+INLINE NodeLabel Node::getLabel() const
+{ return label; }
+INLINE void Node::incrementLabel()
+{ label++; }
+@
+A node can also have excess flow associated with it.  Typically,
+this only occurs at a node that is adjacent to the pseduo-root
+of the tree.  In our implementation, we store excess on nodes
+in the middle of the tree temporarily while we are pushing it towards
+the pseudo-root.
+<<Node data>>=
+    NodeExcess	excess;
+@
+Of course, then we need methods to manipulate the excess.
+<<Node methods>>=
+    NodeExcess getExcess() const;
+    void decrementExcess(NodeExcess delta);
+    void setExcess(NodeExcess newExcess);
+<<Node inline implementations>>=
+INLINE NodeExcess Node::getExcess() const
+{ return excess; }
+INLINE void Node::decrementExcess(NodeExcess delta)
+{ excess -= delta; }
+INLINE void Node::setExcess(NodeExcess newExcess)
+{ excess = newExcess; }
+
+
+<<Node method implementations>>=
+<<debugging functions>>=
+<<C++ overhead>>=
+
+@
+\subsubsection{File Boiler Plate}
+We start with the boiler-plate implementation file. 
+<<*>>=
+#include "Node.h"
+#include "debug.h"
+#include <iostream.h>
+#include <iomanip.h>
+#include <assert.h>
+
+<<Node method implementations>>
+@
+Through magic of the C preprocessor and the macro-like facilities
+of {\em noweb}, we can easily define the inline functions
+out-of-line to allow us to collect better profile information - 
+i.e. collect data on the inline functions that would otherwise
+not show up in the function call traces of the profiler.
+<<*>>=
+#ifndef INLINE_NODE
+#define INLINE /*inline*/
+<<Node inline implementations>>
+#undef INLINE 
+#endif /*INLINE_NODE*/
+@
+The header defines the [[Node]] class, its member functions, member
+data, and inline functions.  Again, we have more boiler-plate.
+<<header>>=
+#ifndef NODE_H
+#define NODE_H
+<<header include files>>
+
+class Node 
+{
+    <<Node methods>>
+    <<debugging functions>>
+    <<C++ overhead>>
+private:
+    <<Node data>>
+};
+@ %def Node
+In case we want the inline functions to really be inlined, we
+also define them here in the header file.
+<<header>>=
+#ifdef INLINE_NODE
+#define INLINE inline
+<<Node inline implementations>>
+#undef INLINE 
+#endif /*INLINE_NODE*/
+
+#endif /*NODE_H*/

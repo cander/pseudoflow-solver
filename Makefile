@@ -1,0 +1,103 @@
+
+include site.mk
+
+OPTIONS	= -g 
+INLINE  = -DINLINE_NODE -DINLINE_SOLVER
+CFLAGS	= -Wall $(OPTIONS) $(INLINE) $(SITE_CFLAGS) 
+
+# after installation, make doc.dvi for literate version
+
+# the order of these files is the order they show up in the latex doc
+WEBFILES = Node.nw Edge.nw
+
+SRCS     = Node.h Node.C Edge.h Edge.C
+
+OBJECTS  = Node.o Edge.o Timer.o buildinfo.o
+
+LIBNAME	 = libpsa.a
+DOCFILES = doc.dvi doc.ps doc.aux doc.log allcode.tex doc.tex doc.toc
+
+NOTANGLE=notangle
+SHELL=/bin/sh
+# set this for CPIF and then distribute tools with bad timestamps...
+#CPIF=| cpif
+CPIF=>
+
+.SUFFIXES: .nw .tex .dvi .h
+.nw.tex: ;	noweave $*.nw > $*.tex
+.nw.c: ;	$(NOTANGLE) -L $*.nw > $*.c
+.nw.C: ;	$(NOTANGLE) -L $*.nw > $*.C
+.nw.o: ;	$(NOTANGLE) -L $*.nw > $*.c
+		$(CC) $(CFLAGS) -c $*.c
+.nw.h: ;	$(NOTANGLE) -L -Rheader $*.nw $(CPIF) $*.h
+.C.o: ;		$(CXX) -c $(CFLAGS) $*.C
+
+
+
+
+all: $(LIBNAME) 
+
+
+$(LIBNAME): $(OBJECTS)
+	ar rv $(LIBNAME) $(OBJECTS)
+	ranlib $(LIBNAME)
+
+
+clean: 
+	rm -f $(DOCFILES) $(OBJECTS)
+
+clobber:	clean
+		rm -f $(SRCS)
+
+
+buildinfo.c: .
+	echo 'char* buildFlags = "'$(CFLAGS)'";' > buildinfo.c
+	echo 'char* buildDate = "'`date`'";' >> buildinfo.c
+
+
+# special build version for various purposes
+profile:
+	rm -f $(OBJECTS)
+	$(MAKE) OPTIONS="-pg -O" INLINE="" all
+
+check:
+	rm -f $(OBJECTS)
+	$(MAKE) OPTIONS="-g -DDEBUG"
+
+optimize:
+	rm -f $(OBJECTS)
+	$(MAKE) OPTIONS="-O2" all
+
+# strip out all the references to the noweb files to create 'pure' C/C++
+purec: $(SRCS)
+	for f in $(SRCS) ; do \
+		sed '/^#line/d' $$f > $$f.pure; \
+		mv $$f.pure $$f ; done
+
+# rules to build documentation
+
+doc.tex:	doc.nw
+	cp doc.nw doc.tex
+
+allcode.tex: $(WEBFILES)
+	noweave -n -index $(WEBFILES) > allcode.tex
+
+doc.dvi:	doc.tex allcode.tex
+	latex doc
+	latex doc
+
+doc.ps: doc.dvi
+	dvips -o doc.ps doc.dvi
+
+twoup.ps: doc.ps
+	psselect -r doc.ps | psnup -2 -pletter > twoup.ps
+
+cvsignore:
+	echo "*.doc *.dvi *.ps *.log *.toc *.tex *.aux" > .cvsignore
+	echo $(SRCS) .cvsignore >> .cvsignore
+
+# dependencies - these should be done automatically
+
+Node.o: Node.C Node.h types.h debug.h
+Edge.o: Edge.C Edge.h types.h debug.h
+Timer.o: Timer.h

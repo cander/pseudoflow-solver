@@ -1,0 +1,59 @@
+\subsection{Edges}
+<<Edge methods>>=
+<<Edge data>>=
+<<Edge method implementations>>=
+<<Edge inline implementations>>=
+<<Edge header include files>>=
+<<debugging functions>>=
+<<C++ overhead>>=
+@
+\subsubsection{File Boiler Plate}
+We start with the boiler-plate implementation file. 
+<<*>>=
+#include "Edge.h"
+#include "debug.h"
+#include <iostream.h>
+#include <iomanip.h>
+#include <assert.h>
+
+<<Edge method implementations>>
+@
+Through magic of the C preprocessor and the macro-like facilities
+of {\em noweb}, we can easily define the inline functions
+out-of-line to allow us to collect better profile information - 
+i.e. collect data on the inline functions that would otherwise
+not show up in the function call traces of the profiler.
+<<*>>=
+#ifndef INLINE_EDGE
+#define INLINE /*inline*/
+<<Edge inline implementations>>
+#undef INLINE 
+#endif /*INLINE_EDGE*/
+@
+The header defines the [[Edge]] class, its member functions, member
+data, and inline functions.  Again, we have more boiler-plate.
+<<header>>=
+#ifndef EDGE_H
+#define EDGE_H
+#include "types.h"
+<<Edge header include files>>
+
+class Edge 
+{
+    <<Edge methods>>
+    <<debugging functions>>
+    <<C++ overhead>>
+private:
+    <<Edge data>>
+};
+@ %def Edge
+In case we want the inline functions to really be inlined, we
+also define them here in the header file.
+<<header>>=
+#ifdef INLINE_EDGE
+#define INLINE inline
+<<Edge inline implementations>>
+#undef INLINE 
+#endif /*INLINE_EDGE*/
+
+#endif /*EDGE_H*/
