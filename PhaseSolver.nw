@@ -74,7 +74,6 @@ because the strong branch cannot merge with any weak branches, and
 the labels of the strong branches will only increase further during
 execution.
 <<terminate early based on counting labels>>=
-#ifdef TERM_LABELS
 	if ((labelCount[strongLabel - 1] == 0) && 
 	    (strongLabel > maxInitialLabel))
 	{
@@ -90,7 +89,12 @@ execution.
 		break;
 	    }
 	}
-#endif /* TERM_LABELS */
+<<Solver protected members>>=
+    int* labelCount;
+<<default Solver constructor>>=
+    labelCount = nil;
+@ %def labelCount 
+Some of the labeling methods are fairly complex, and we have been kinda lax
 @ With global relabeling, we can develop a gap in the node labels before
 we are done processes - i.e. while there are still merger arcs.  If we 
 perform another global relabel, that should close the gap by raising the
@@ -135,22 +139,9 @@ queue a branch with $\ell = 1$, the initial value for weak nodes.
 <<Solver method implementations>>=
 Boolean PhaseSolver::processBranch(Node& root)
 {
-	Boolean performedMerger = FALSE;
-#ifdef __COUNT_LABELS
-    if (labelCount[root.getLabel() - 1] == 0) {
-#else /* !COUNT_LABELS */
-    if (FALSE) {
-#endif /* COUNT_LABELS */
-	TRACE( trout << "Relabel branch " << root.getId() 
-	             << " with label " << root.getLabel() << endl; )
-	relabelSubtree(root);
+    Boolean performedMerger = processSubtree(root);
+    if (!performedMerger) {
 	addStrongBranch(root);	// XXX maybe this should be in solve
-
-    } else {
-	performedMerger = processSubtree(root);
-	if (!performedMerger) {
-	    addStrongBranch(root);	// XXX maybe this should be in solve
-	}
     }
 
     return performedMerger;
@@ -319,10 +310,8 @@ this.  We also reset the iterations.
 INLINE void PhaseSolver::setLabel(Node& node, NodeLabel newLabel)
 {
     assert(newLabel > node.getLabel());
-#ifdef  COUNT_LABELS 
     labelCount[node.getLabel()]--;
     labelCount[newLabel]++;
-#endif /* COUNT_LABELS */
     STATS(numRelabels++);
     STATS(if ((newLabel - node.getLabel()) > 1) numLabelSkips++; );
     node.setLabel(newLabel);
@@ -567,15 +556,12 @@ NodeBucket::insertHead(Node& root)
     if (head == nil) {
 	root.setNextNil();
 	head = &root;
-#ifdef LIFO_BUCKETS
 	tail = &root;
-#endif /* LIFO_BUCKETS */
     } else {
 	root.setNext(head);
 	head = &root;
     }
 }
-#ifdef LIFO_BUCKETS
 inline void 
 NodeBucket::insertTail(Node& root)
 {
@@ -589,7 +575,6 @@ NodeBucket::insertTail(Node& root)
 	root.setNextNil();
     }
 }
-#endif /* LIFO_BUCKETS */
 inline NodePtr
 NodeBucket::removeHead()
 {
@@ -597,11 +582,9 @@ NodeBucket::removeHead()
     if (head != nil) {
 	result = head;
 	head = result->getNext();
-#ifdef LIFO_BUCKETS
 	if (head == nil) {
 	    tail = nil;
 	}
-#endif /* LIFO_BUCKETS */
     }
 
     return result;
@@ -999,6 +982,33 @@ and dequeueing the nodes all the time.  Not to mention, it's more
 compilicated, of course.
 
 \subsection{Highest Root Label}
+Here is a totally different solving function.  It is inspired by the
+highest label variant of push-relabel.  Due to our tree/branch and label
+structure, we cannot exactly perform a highest label on a per-node basis
+the way push-relabel does.  For example,
+if we choose the highest labeled node in a branch
+and increase its label arbitrarily after an empty scan, then things will
+fail.  If we loose the bound on the difference of node labels in the
+graph, then we can't bound the maximum label of a node (invariant 1).  It
+would seem strange to have strong nodes with residual capacity between
+them, but widely different labels.  If we try to prune a node, but other
+nodes in the branch have access to weak nodes, then the node should still
+be active.  
+
+So, instead what we do is process the branch with the highest labeled
+root.  We process it in the usual way - from the root down only looking at
+nodes with label $\ell$.  If we do not merge, we will relabel the top part
+of the branch and put it back in the bucket list.  This will surely be the
+highest labeled branch, so we will process it again.  
+
+At some point, we will achieve a condition similar to the main algorithm's
+early termination - i.e. there will be no nodes in the tree with label
+one less than ours.  We cannot terminate the algorithm at this time, but
+we can prune the branch (subject to some conditions discussed below).
+
+For this method, we do not support delayed normalization, and we did not
+even consider implementing it for Simplex.  Therefore, it is mutually
+exclusive with delayed normalization and simplex.
 <<Solver methods>>=
     void highestLabelSolve(AddBranchPtr addFunc);
 <<Solver method implementations>>=
@@ -1028,12 +1038,28 @@ void PhaseSolver::highestLabelSolve(AddBranchPtr addFunc)
 }
 @ %def highestLabelSolve
 If there is a gap, we can prune this branch and all others with the same
-label.  For the moment, we will cheat and let [[globalRelabel]] do it for
-us.
+label or higher.  (Actually, we're only pruning this branch.  We
+could/should prune all nodes with the same label, as push-relabel does.)
+
+Note that this is a little tricky when we deal with something like
+saturate-all with distance to sink labeling.  This creates weak nodes with
+fairly high labels.  We can't simply look for no nodes with label 
+$\ell - 1$ because after we've processed some strong nodes with high
+labels, we could get down to some that have labels less than some weak
+nodes out there.  Therefore, during initializaiton, we need to figure out
+the highest labeled weak node and avoid pruning until we reach that level.
+
+Another alternative would be to scan the label counts from [[strongLabel]]
+up to [[maxWeakLabel]].  If there are no nodes in that range, we could
+safely prune this branch without waiting for its label to exceed
+[[maxWeakLabel]].  On the one hand, that would involve an expensive
+iterative test here.  On the other hand, midlessly raising the label of
+this strong branch above [[maxWeakLabel]] is expensive.  Furthermore, if
+we make that iterative scan and it comes up empty, we could reduce
+[[maxWeakLabel]] to [[strongLabel]] thus reducing its overhead in the
+future.
 <<prune gap branch if needed>>=
-    if ((labelCount[strongLabel - 1] == 0) && 
-        //(strongLabel > INIT_WEAK_LABEL))
-        (strongLabel > maxWeakLabel))
+    if ((labelCount[strongLabel - 1] == 0) && (strongLabel > maxWeakLabel))
     {
 	TRACE(trout << "Found a gap at label " << strongLabel << endl);
 	setBranchLabel(*strongBranch, numNodes);
@@ -1832,14 +1858,7 @@ void PhaseSolver::setLabelsAndStatus(LabelMethod labelMethod)
 	    setConstantLabels();
 	    break;
 	case LABELS_SINK_DIST:
-	    {
 	    setSinkDistLabels();
-	    setInitialLabelCounts();
-	    //for (int i = 0; i < numNodes; i++) {
-		//if (labelCount[i] > 0) labelCount[i]++;
-	    //}
-	    return;		// XXX - hack to test setInitialLableCount
-	    }
 	    break;
 	case LABELS_DEFICIT_DIST:
 	    setDeficitDistLabels();
@@ -1895,7 +1914,6 @@ It also updates the count of how many nodes have each label value.
 void PhaseSolver::labelBranch(Node& node, NodeLabel label)
 {
     node.setLabel(label);
-    //III labelCount[label]++;
 
     node.resetIterations();
     while (node.hasMoreChildren()) {
@@ -1906,18 +1924,13 @@ void PhaseSolver::labelBranch(Node& node, NodeLabel label)
     node.resetIterations();
 }
 @ %def labelBranch
-<<Solver protected members>>=
-    int* labelCount;
-<<default Solver constructor>>=
-    labelCount = nil;
-@ %def labelCount 
-Some of the labeling methods are fairly complex, and we have been kinda lax
 about keeping track of the label counts.  This is especially hard if we
 re-use code that was intended for use while solving when the labels are
 correct vs. initialization when the labels are not yet set.  Therefore,
 just to make sure everything is perfectly correct, we'll reset the label
 counts and then scan the nodes to count them correctly.
-and record their labels 
+Note that shortest path initialization ([[buildSpTree]]) 
+does {\em not} use this method.
 <<Solver methods>>=
     void setInitialLabelCounts();
 <<Solver method implementations>>=
@@ -1957,11 +1970,20 @@ void PhaseSolver::setInitialLabelCounts()
 #endif DEBUG
 }
 @ %def setInitialLabelCounts 
+Above we computed a couple of maximum label values that are used by the
+solver functions to control early termination. The [[maxInitialLabel]] is
+pretty obvious.  The [[maxWeakLabel]] is a bit of a misnomer.  We only
+looked at nodes with negative excess.  If we have an initialization scheme
+that generates weak branches, and gives them labels based on their depth,
+this value will be wrong.  However, calling [[isStrongNode]] on every node
+would be prohibitive, $O(n^2)$.
 <<Solver data>>=
     int maxWeakLabel;
+    int maxInitialLabel;
 <<default Solver constructor>>=
     maxWeakLabel = INIT_WEAK_LABEL;
-@
+    maxInitialLabel = INIT_WEAK_LABEL;
+@ %def maxWeakLabel maxInitialLabel
 \subsubsection{Blocking Path Initialization}
 A simple extension to the idea of just simply saturating the
 source- and sink-adjacent arcs is to try to push flow from the
@@ -2391,9 +2413,6 @@ void PhaseSolver::setSpInitialNodeStatus(LabelMethod labelMethod)
 		// notice with cher graphs that some zero-deficit nodes are
 		// unreachable during initialization???
 		node.setLabel(INIT_WEAK_LABEL);
-		if (node.getLabel() > maxWeakLabel) {
-		    maxWeakLabel = node.getLabel();
-		}
 	    }
 	    labelCount[node.getLabel()]++;
 	    node.resetIterations();
@@ -2403,11 +2422,7 @@ void PhaseSolver::setSpInitialNodeStatus(LabelMethod labelMethod)
 	}
     }
 }
-<<Solver data>>=
-    int maxInitialLabel;
-<<default Solver constructor>>=
-    maxInitialLabel = INIT_WEAK_LABEL;
-@ %def setSpInitialNodeStatus maxInitialLabel
+@ %def setSpInitialNodeStatus 
 For a strong node, we iterate over its neighbors looking for nodes with
 non-positive excess and find the minimum label.  
 {\em We don't really care about in/out arcs, but source/sink node could
