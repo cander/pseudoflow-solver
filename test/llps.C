@@ -13,8 +13,9 @@ usage()
     cerr << "\t -d   dump the final disposition of each node" << endl;
     cerr << "\t -f   write the flow values for each arc" << endl;
     cerr << "\t -I   specify initialization function" << endl;
-    cerr << "\t -N   specify normalization method" << endl;
     cerr << "\t -B   specify strong bucket management" << endl;
+    cerr << "\t -M   specify merger function" << endl;
+    cerr << "\t -N   specify normalization method" << endl;
 }
 
 int 
@@ -25,10 +26,11 @@ main(int argc, char** argv)
     void (PhaseSolver::* initFunc)() = &PhaseSolver::buildSimpleTree;
     void (PhaseSolver::* solverFunc)(AddBranchPtr) = &PhaseSolver::solve;
     AddBranchPtr addBranchFunc = &PhaseSolver::addBranchLifo;
+    MergePtr mergeFunc = &PhaseSolver::merge;
 
     // parse arguments
     int ch;
-    while ((ch = getopt(argc, argv, "dfI:N:B:")) != EOF) {
+    while ((ch = getopt(argc, argv, "dfI:M:N:B:")) != EOF) {
 	switch (ch) {
 	case 'd':
 	    dumpNodes = TRUE;
@@ -45,6 +47,18 @@ main(int argc, char** argv)
 		initFunc = &PhaseSolver::saturateAllArcs;
 	    } else {
 		cerr << "Invalid initialization option " << optarg << endl;
+		usage();
+		return 1;
+	    }
+	    break;
+
+	case 'M':
+	    if (strcmp(optarg, "simplex") == 0) {
+		mergeFunc = &PhaseSolver::simplexMerge;
+	    } else if (strcmp(optarg, "normal") == 0) {
+		mergeFunc = &PhaseSolver::merge;
+	    } else {
+		cerr << "Invalid merge function option " << optarg << endl;
 		usage();
 		return 1;
 	    }
@@ -97,6 +111,7 @@ main(int argc, char** argv)
     Timer initTimer;
     initTimer.start();
     Boolean readOK =  solver.readDimacsInstance(instanceName);
+    solver.setMergeFunc(mergeFunc);
     initTimer.stop();
 
     if (readOK) {
