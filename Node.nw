@@ -524,14 +524,15 @@ data structures.
 void Node::printTree(int level)
 {
     if (level == 0) {
-	cout << " Node id   address   level   label  parent res-cap "
+	cout << " Node id   address   level   label    dist  parent res-cap "
 	     << " excess   flags" << endl;
     }
 
     cout << setw(8) << id << "   "
          << setw(8) << this
 	 << setw(8) << level
-	 << setw(8) << label;
+	 << setw(8) << label
+	 << setw(8) << distance;
 
     cout << setw(8);
     if (isRootNode()) {
