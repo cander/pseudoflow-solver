@@ -1,3 +1,4 @@
+%% $Revision: 1.5 $, $Date: 2000/11/20 19:51:34 $
 \section{Driver Programs}
 The driver programs for the parametric and non-parametric solvers
 are very similar.  So, we have combined them here via [[noweb]] to reduce
@@ -298,6 +299,8 @@ usage()
     cerr << "Usage: pllps [-x] [-g freq] [-t] [-d] [-f] -V lam1,lam2,... [-I init] [-N norm] [-B branch] input-graph flow-output" << endl;
     <<common option usage>>
     cerr << "\t -V   specify values for lambda" << endl;
+    cerr << "buildFlags: " << buildFlags << endl;
+    cerr << "buildDate: " << buildDate << endl;
 }
 
 double*
