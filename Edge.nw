@@ -1,4 +1,4 @@
-%% $Revision: 1.23 $, $Date: 2001/09/27 15:45:48 $
+%% $Revision: 1.24 $, $Date: 2003/09/15 18:39:40 $
 \section{Edges}
 \subsection{Structural Data}
 An edge represents a relationship between two nodes, the source and
@@ -22,9 +22,9 @@ For the purposes of the algorithm, an edge has an orientation that
 idicates which direction we are pushing additional flow - i.e.
 from child towards parent.  
 <<Edge data>>=
-    Boolean	isForward;
+    bool	isForward;
 <<default Edge constructor>>=
-    isForward = TRUE;
+    isForward = true;
 @ %def isForward
 We can set the orientation in two ways: we can toggle or reverse it,
 or we can set the orientation such that the forward direction points
@@ -34,11 +34,11 @@ towards either of the endpoints.
     void setDirectionTo(NodePtr endpoint);
 <<Edge inline implementations>>=
 INLINE void Edge::toggleOrientation()
-{ isForward = isForward ? FALSE : TRUE; }
+{ isForward = isForward ? false : true; }
 INLINE void Edge::setDirectionTo(NodePtr endpoint)
 {
     assert(endpoint == source || endpoint == dest);
-    isForward = (endpoint == dest) ? TRUE : FALSE;
+    isForward = (endpoint == dest) ? true : false;
 }
 @ %toggleOrientation setDirection
 Since the source and destination of the edge are fixed with regard to
@@ -50,21 +50,21 @@ the edge goes from the tail to the head.
     NodePtr getHead() const;
 <<Edge inline implementations>>=
 INLINE NodePtr Edge::getTail() const
-{ return (isForward == TRUE) ? source : dest; }
+{ return (isForward == true) ? source : dest; }
 INLINE NodePtr Edge::getHead() const
-{ return (isForward == TRUE) ? dest : source; }
+{ return (isForward == true) ? dest : source; }
 @ %def getTail getHead
 Regardless of the orientation of the node, given one endpoint we
 want to be able to get the other node and ask if an edge is incident
 to a given node.
 <<Edge methods>>=
     NodePtr getOtherNode(const NodePtr node) const;
-    Boolean isIncident(const NodePtr node) const;
+    bool isIncident(const NodePtr node) const;
 <<Edge inline implementations>>=
 INLINE NodePtr Edge::getOtherNode(const NodePtr node) const
 { return (node == source) ? dest : source; }
-INLINE Boolean Edge::isIncident(const NodePtr node) const
-{ return ((node == source) || (node == dest)) ? TRUE : FALSE; }
+INLINE bool Edge::isIncident(const NodePtr node) const
+{ return ((node == source) || (node == dest)) ? true : false; }
 @ %def getOtherNode isIncident
 \subsection{Flow Data}
 <<Edge data>>=
@@ -184,7 +184,7 @@ void Edge::init(Node& src, Node& dst, FlowAmount cap)
     source = &src;
     dest = &dst;
     flow = 0;
-    isForward = TRUE;
+    isForward = true;
     capacity = cap;
 }
 @ %def init
@@ -201,7 +201,7 @@ void Edge::init(Node& src, Node& dst, FlowAmount _aParam, double _bParam)
     source = &src;
     dest = &dst;
     flow = 0;
-    isForward = TRUE;
+    isForward = true;
     capacity = 0;
     aParam = _aParam;
     bParam = _bParam;
@@ -241,14 +241,14 @@ We set the initial capacity based on the initial value of lambda.  Because
 we take the absolute value of the the capacity, we need to signal the 
 caller as to whether the capacity is actually negative.
 <<Edge methods>>=
-    Boolean setInitialCapacity(double lambda);
+    bool setInitialCapacity(double lambda);
 <<Edge method implementations>>=
-Boolean Edge::setInitialCapacity(double lambda)
+bool Edge::setInitialCapacity(double lambda)
 {
-    Boolean negative = FALSE;
+    bool negative = false;
 #ifdef PARAM_SENSE
     FlowAmount newCapacity = (FlowAmount)(aParam + bParam * lambda);
-    negative = (newCapacity < 0) ? TRUE : FALSE;
+    negative = (newCapacity < 0) ? true : false;
     capacity = iabs(newCapacity);
 #endif PARAM_SENSE
 
@@ -272,19 +272,19 @@ and whether we changed sign).  We use the old lambda to compute the current
 capacity with its real sign (not absolute valued).  Then we can compute
 the new capacity with the new lambda, taking the absolute value if necessary.
 <<Edge methods>>=
-    Boolean increaseLambda(double oldLambda, double newLambda, FlowAmount& delta);
+    bool increaseLambda(double oldLambda, double newLambda, FlowAmount& delta);
 <<Edge inline implementations>>=
-INLINE Boolean Edge::increaseLambda(double oldLambda, 
+INLINE bool Edge::increaseLambda(double oldLambda, 
                                     double newLambda, FlowAmount& delta)
 {
     assert(newLambda >= oldLambda);
-    Boolean crossedZero = FALSE;
+    bool crossedZero = false;
 #ifdef PARAM_SENSE
     FlowAmount oldCapacity  = (FlowAmount)(aParam + bParam * oldLambda);
     FlowAmount newCapacity  = (FlowAmount)(aParam + bParam * newLambda);
     delta = newCapacity - oldCapacity;
     capacity = iabs(newCapacity);
-    crossedZero = ((oldCapacity < 0) && (newCapacity >= 0)) ? TRUE : FALSE;
+    crossedZero = ((oldCapacity < 0) && (newCapacity >= 0)) ? true : false;
 #endif PARAM_SENSE
 
     return crossedZero;
@@ -303,7 +303,7 @@ void Edge::reInit(Node& src, Node& dst)
     source = &src;
     dest = &dst;
     flow = 0;
-    isForward = TRUE;
+    isForward = true;
 }
 @ %def reInit
 For general parametric analysis, we need to set the capacity to a new
@@ -347,7 +347,7 @@ mostly for debugging.
 ostream& operator<<(ostream& out, const Edge& edge)
 {
     out << "(" << &edge << "): ";
-    if (edge.isForward == TRUE) {
+    if (edge.isForward == true) {
 	out << edge.source->getId() << "(src) --> " 
 	    << edge.dest->getId() << "(dest)";
     } else {
@@ -357,7 +357,7 @@ ostream& operator<<(ostream& out, const Edge& edge)
     return out << " [" << edge.flow << "," << edge.capacity << "]";
 }
 <<Edge header include files>>=
-class ostream;
+#include <iosfwd>
 @
 We also need to print the flow data in Dimacs format.  Since we
 already used the insertion operator, we'll just define a `normal'
@@ -392,15 +392,15 @@ which is the source or destination.  If the edge or nodes are not
 valid, we return false so that the caller can throw an assertion 
 failure.
 <<Edge methods>>=
-    Boolean validateEdge(Node& node1, Node& node2);
+    bool validateEdge(Node& node1, Node& node2);
 <<Edge method implementations>>=
-Boolean Edge::validateEdge(Node& node1, Node& node2)
+bool Edge::validateEdge(Node& node1, Node& node2)
 {
-    Boolean result = FALSE;
+    bool result = false;
     if (source == &node1) {
-	result = (dest == &node2) ? TRUE : FALSE;
+	result = (dest == &node2) ? true : false;
     } else {
-	result = (dest == &node1) ? TRUE : FALSE;
+	result = (dest == &node1) ? true : false;
     }
 
     return result;
@@ -409,12 +409,13 @@ Boolean Edge::validateEdge(Node& node1, Node& node2)
 \subsection{File Boiler Plate}
 We start with the boiler-plate implementation file. 
 <<*>>=
-// $Revision: 1.23 $, $Date: 2001/09/27 15:45:48 $
+// $Revision: 1.24 $, $Date: 2003/09/15 18:39:40 $
 // This C++ code was generated by noweb from the corresponding .nw file
 #include "Edge.h"
 #include "Node.h"
-#include <iostream.h>
-#include <iomanip.h>
+#include <iostream>
+#include <iomanip>
+using namespace std;
 
 <<Edge method implementations>>
 @
@@ -433,13 +434,14 @@ not show up in the function call traces of the profiler.
 The header defines the [[Edge]] class, its member functions, member
 data, and inline functions.  Again, we have more boiler-plate.
 <<header>>=
-// $Revision: 1.23 $, $Date: 2001/09/27 15:45:48 $
+// $Revision: 1.24 $, $Date: 2003/09/15 18:39:40 $
 // This C++ code was generated by noweb from the corresponding .nw file
 #ifndef EDGE_H
 #define EDGE_H
 #include "types.h"
 #include "debug.h"
 <<Edge header include files>>
+using namespace std;
 
 class Edge 
 {

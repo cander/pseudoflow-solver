@@ -1,4 +1,4 @@
-%% $Revision: 1.32 $, $Date: 2001/09/23 22:37:15 $
+%% $Revision: 1.33 $, $Date: 2003/09/15 18:39:40 $
 \section{Nodes in the Graph}
 Nodes belong to both the original, complete graph as well as
 the tree maintained by the solver.  Therefore, they have 
@@ -86,7 +86,7 @@ The parent edge is [[nil]] if the node is a root.
 <<Node methods>>=
     EdgePtr	getParentEdge() const;
     NodePtr	getParentNode();
-    Boolean	isRootNode() const;
+    bool	isRootNode() const;
     FlowAmount  getParentCapacity() const;
     FlowAmount  getParentDownCapacity() const;
 <<Node inline implementations>>=
@@ -94,8 +94,8 @@ INLINE EdgePtr Node::getParentEdge() const
 { return parentEdge; }
 INLINE NodePtr Node::getParentNode() 
 { return parentNode; }
-INLINE Boolean Node::isRootNode() const
-{ return (parentEdge == nil) ? TRUE : FALSE; }
+INLINE bool Node::isRootNode() const
+{ return (parentEdge == nil) ? true : false; }
 INLINE FlowAmount Node::getParentCapacity() const
 { return parentEdge->residCapacity(); }
 INLINE FlowAmount Node::getParentDownCapacity() const
@@ -153,14 +153,14 @@ of edges.
 First, iterating over children:
 <<Node methods>>=
     void	beginChildren();
-    Boolean	hasMoreChildren();
+    bool	hasMoreChildren();
     Node&	getCurrentChild();
     void	advanceChildren();
     int 	getNumChildren();
 <<Node inline implementations>>=
 INLINE void Node::beginChildren()
 { children.beginIteration(); }
-INLINE Boolean Node::hasMoreChildren()
+INLINE bool Node::hasMoreChildren()
 { return children.hasMoreElements(); }
 INLINE Node& Node::getCurrentChild()
 { return *(children.getCurrentElement()->getOtherNode(this)); }
@@ -172,13 +172,13 @@ INLINE int Node:: getNumChildren()
 And we have basically the same code for iterating over neighbors:
 <<Node methods>>=
     void	beginNeighbors();
-    Boolean	hasMoreNeighbors();
+    bool	hasMoreNeighbors();
     Edge&	getCurrentNeighbor();
     void	advanceNeighbors();
 <<Node inline implementations>>=
 INLINE void Node::beginNeighbors()
 { neighbors.beginIteration(); }
-INLINE Boolean Node::hasMoreNeighbors()
+INLINE bool Node::hasMoreNeighbors()
 { return neighbors.hasMoreElements(); }
 INLINE Edge& Node::getCurrentNeighbor()
 { return *neighbors.getCurrentElement(); }
@@ -423,9 +423,9 @@ exactly matches the residual capacity, we will not split, but the
 calling function can choose to split us if he sees no remaining 
 residual capacity.
 <<Node methods>>=
-    Boolean pushToParent();
+    bool pushToParent();
 <<Node inline implementations>>=
-INLINE Boolean Node::pushToParent()
+INLINE bool Node::pushToParent()
 {
     assert(parentEdge != nil);
     Edge& edge = *parentEdge;
@@ -434,10 +434,10 @@ INLINE Boolean Node::pushToParent()
 
     if (edge.residCapacity() >= excess) {
 	<<push without splitting>>
-	return FALSE;
+	return false;
     } else {
 	<<push and split>>
-	return TRUE;
+	return true;
     }
 }
 @ %def pushToParent
@@ -464,9 +464,9 @@ During normal operations, we only have to push to our parent.  However,
 when we renormalize during general parametric analysis, we need to pull
 excess from our parent.
 <<Node methods>>=
-    Boolean pullFromParent();
+    bool pullFromParent();
 <<Node inline implementations>>=
-INLINE Boolean Node::pullFromParent()
+INLINE bool Node::pullFromParent()
 {
     assert((parentEdge != nil) && (parentNode != nil));
     Edge& edge = *parentEdge;
@@ -477,10 +477,10 @@ INLINE Boolean Node::pullFromParent()
 
     if (residCap >= deficit) {
 	<<pull without splitting>>
-	return FALSE;
+	return false;
     } else {
 	<<pull and split>>
-	return TRUE;
+	return true;
     }
 }
 @ %def pullFromParent
@@ -536,7 +536,7 @@ public:
 <<Node methods>>=
     void setFlag(int f) { flag |= f; }
     void clearFlag(int f) { flag &= ~f; }
-    Boolean flagIsSet(int f) { return (flag & f) ? TRUE : FALSE; }
+    bool flagIsSet(int f) { return (flag & f) ? true : false; }
     void clearFlagPath(int f, NodePtr end);
 @ %def flag setFlag clearFlag flagIsSet
 This function clear a flag value along a path of parent pointers.
@@ -619,11 +619,11 @@ the children.  As soon as we detect any error in the tree, we
 stop immediately, since there may be zillions of errors, which would
 swamp the output that we look at.
 <<debugging functions>>=
-    Boolean checkTree(EdgePtr expectedParentEdge);
+    bool checkTree(EdgePtr expectedParentEdge);
 <<Node method implementations>>=
-Boolean Node::checkTree(EdgePtr expectedParentEdge)
+bool Node::checkTree(EdgePtr expectedParentEdge)
 {
-    Boolean treeOK = TRUE;
+    bool treeOK = true;
     <<check parent pointers>>
 
     if (treeOK) {
@@ -644,18 +644,18 @@ tells us it should be.  Furthermore, the edge should point from us
 	    cout << "\nError: node " << id << " parent edge wrong. "
 	         << " expected " << expectedParentEdge << endl
 		 << " \tfound " << parentEdge << endl;
-	    treeOK = FALSE;
+	    treeOK = false;
 	} else {
 	    if (parentEdge->getTail() != this) {
 		cout << "\nError: node " << id 
 		     << " parent edge orientation wrong: "
 		     << *parentEdge << endl;
-		treeOK = FALSE;
+		treeOK = false;
 	    } else {
 		if (parentEdge->getHead() != parentNode) {
 		    cout << "\nError: node " << id 
 			 << " parent edge does not match parentNode" << endl;
-		    treeOK = FALSE;
+		    treeOK = false;
 		}
 	    }
 	}
@@ -665,25 +665,25 @@ tells us it should be.  Furthermore, the edge should point from us
 		cout << "\nError: node " << id 
 		     << " expected nil parent edge, found: "
 		     << *parentEdge << endl;
-		treeOK = FALSE;
+		treeOK = false;
 	}
     }
 @
 <<check parent's children>>=
     if (treeOK) {
-	Boolean foundThis = FALSE;
+	bool foundThis = false;
 	int numChildren = parentNode->children.getSize();
 	for (int i = 0; i < numChildren; i++) {
 	    EdgePtr childEdge = parentNode->children.getElement(i);
 	    if (childEdge != nil) {
 		NodePtr childNode = childEdge->getOtherNode(parentNode);
 		if (childNode == this) {
-		    foundThis = TRUE;
+		    foundThis = true;
 		    break;
 		}
 	    }
 	}
-	if (foundThis == FALSE) {
+	if (foundThis == false) {
 	    cout << "\nError: node " << id << " can't find outself in "
 		 << "parent node " << parentNode->id << endl;
 	}
@@ -699,7 +699,7 @@ and check each of them in turn.  We must skip holes in the list
 	if (childEdge != nil) {
 	    NodePtr childNode = childEdge->getOtherNode(this);
 	    treeOK = childNode->checkTree(childEdge);
-	    if (treeOK == FALSE) {
+	    if (treeOK == false) {
 		break;
 	    }
 	}
@@ -711,12 +711,12 @@ and check each of them in turn.  We must skip holes in the list
 	    cout << "\nWarning: node " << id 
 	         << " non-zero excess in non-root node " 
 		 << excess << endl;
-	    treeOK = FALSE;
+	    treeOK = false;
 	}
 	else if ((label < parentNode->label) && (flag == 0)) {
 	    cout << "\nError: node " << id 
 		 << " label inversion for non-degenerate node" << endl;
-	    treeOK = FALSE;
+	    treeOK = false;
 	}
     }
 @
@@ -740,17 +740,17 @@ NodePtr Node::getRoot()
 With that function, we can easily (if not efficiently) determine if
 a node is strong or weak.
 <<debugging functions>>=
-    Boolean isStrong(Boolean zeroExcessIsStrong);
+    bool isStrong(bool zeroExcessIsStrong);
 <<Node method implementations>>=
-Boolean Node::isStrong(Boolean zeroExcessIsStrong)
+bool Node::isStrong(bool zeroExcessIsStrong)
 { 
     FlowAmount excess = getRoot()->excess;
     if (excess > 0) {
-	return TRUE;
+	return true;
     } else if (excess == 0 && zeroExcessIsStrong) {
-	return TRUE;
+	return true;
     } else {
-	return FALSE;
+	return false;
     }
 }
 @ %def isStrong
@@ -796,7 +796,7 @@ private:
 \subsection{File Boiler Plate}
 We start with the boiler-plate implementation file. 
 <<*>>=
-// $Revision: 1.32 $, $Date: 2001/09/23 22:37:15 $
+// $Revision: 1.33 $, $Date: 2003/09/15 18:39:40 $
 // This C++ code was generated by noweb from the corresponding .nw file
 #include "Node.h"
 #include <iostream.h>
@@ -819,7 +819,7 @@ not show up in the function call traces of the profiler.
 The header defines the [[Node]] class, its member functions, member
 data, and inline functions.  Again, we have more boiler-plate.
 <<header>>=
-// $Revision: 1.32 $, $Date: 2001/09/23 22:37:15 $
+// $Revision: 1.33 $, $Date: 2003/09/15 18:39:40 $
 // This C++ code was generated by noweb from the corresponding .nw file
 #ifndef NODE_H
 #define NODE_H

@@ -1,7 +1,6 @@
 #ifndef TYPES_H
 #define TYPES_H
 #define nil 0
-enum Boolean { FALSE = 0, TRUE };
 
 typedef int NodeId;
 

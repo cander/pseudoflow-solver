@@ -1,4 +1,4 @@
-%% $Revision: 1.87 $, $Date: 2003/09/15 18:31:27 $
+%% $Revision: 1.88 $, $Date: 2003/09/15 18:39:40 $
 \section{Pseudoflow Solver}
 The solver manages the entire problem instance.  Initially
 this includes the nodes and edges.  These are stored as contiguous
@@ -59,7 +59,7 @@ void PhaseSolver::solve(AddBranchPtr addFunc)
 	    }
 	)
 	<<terminate early based on counting labels>>
-	Boolean performedMerger = processBranch(*strongBranch);
+	bool performedMerger = processBranch(*strongBranch);
 	STATS(performedMerger ? 0 : numEmptyBranchScans++ );
 	checkForRelabel();
 	strongBranch = getLowestBranch();
@@ -78,11 +78,11 @@ execution.
 	if ((labelCount[strongLabel - 1] == 0) && 
 	    (strongLabel > maxInitialLabel))
 	{
-	    Boolean earlyTerm = FALSE;
+	    bool earlyTerm = false;
 	    if (relabelFrequency > 0.0) {
 		<<perform last global relabel>>
 	    } else {
-		earlyTerm = TRUE;
+		earlyTerm = true;
 	    }
 
 	    if (earlyTerm) {
@@ -117,7 +117,7 @@ cout << "Performing final global relabel at phase " << strongLabel
     if ((labelCount[strongLabel - 1] == 0) && 
 	(strongLabel > INIT_WEAK_LABEL))
     {
-	earlyTerm = TRUE;
+	earlyTerm = true;
     }
 @
 \subsection{Processing Branches}
@@ -136,11 +136,11 @@ and terminate early.  It might still be invoked as a side-effect of
 some initialization or normalization schemes - especially if we
 queue a branch with $\ell = 1$, the initial value for weak nodes.
 <<Solver methods>>=
-    virtual Boolean processBranch(Node& root);
+    virtual bool processBranch(Node& root);
 <<Solver method implementations>>=
-Boolean PhaseSolver::processBranch(Node& root)
+bool PhaseSolver::processBranch(Node& root)
 {
-    Boolean performedMerger = processSubtree(root);
+    bool performedMerger = processSubtree(root);
     if (!performedMerger) {
 	addStrongBranch(root);	// XXX maybe this should be in solve
     }
@@ -159,9 +159,9 @@ be put in the appropriate bucket where [[getLowestBranch]] will
 find it.  If there is no merger, the label of this node is incremented.
 The function returns true or false if we perform a merger.
 <<Solver methods>>=
-    Boolean processSubtree(Node& node);
+    bool processSubtree(Node& node);
 <<Solver method implementations>>=
-Boolean PhaseSolver::processSubtree(Node& node)
+bool PhaseSolver::processSubtree(Node& node)
 {
     NodeLabel label = node.getLabel();
     STATS(numNodeVisits++);
@@ -178,13 +178,13 @@ Boolean PhaseSolver::processSubtree(Node& node)
     <<increase node label>>
     TRACE(trout << "node " << node.getId() << " relabled to "
 		<< node.getLabel() << endl;);
-    return FALSE;
+    return false;
 }
 @ %def processSubtree
 <<public Solver data>>=
-    Boolean postOrderSearch;
+    bool postOrderSearch;
 <<default Solver constructor>>=
-    postOrderSearch = TRUE;
+    postOrderSearch = true;
 @
 We process all children that have the same label as ours, [[label]].
 If a child has a higher label, we just ignore it.  By monotonicity,
@@ -192,12 +192,12 @@ it can't have a label less than ours.  If we process the sub-tree
 and that generates a merger we return immediately.
 <<process all children>>=
     if (scanChildren(node, label)) {
-	return TRUE;
+	return true;
     }
 <<Solver methods>>=
-    Boolean scanChildren(Node& node, NodeLabel label);
+    bool scanChildren(Node& node, NodeLabel label);
 <<Solver inline implementations>>=
-INLINE Boolean PhaseSolver::scanChildren(Node& node, NodeLabel label)
+INLINE bool PhaseSolver::scanChildren(Node& node, NodeLabel label)
 {
     while (node.hasMoreChildren()) {
 	Node& child = node.getCurrentChild();
@@ -206,14 +206,14 @@ INLINE Boolean PhaseSolver::scanChildren(Node& node, NodeLabel label)
 	    node.minChildLabel = child.getLabel();
 	}
 	if (child.getLabel() == label) {
-	    Boolean performedMerger = processSubtree(child);
+	    bool performedMerger = processSubtree(child);
 	    if (performedMerger) {
-		return TRUE;
+		return true;
 	    }
 	}
 	node.advanceChildren();
     }
-    return FALSE;
+    return false;
 }
 @ %def scanChildren
 Processing neighbors is a bit different.  Here is where we look for
@@ -222,7 +222,7 @@ a merger to a node with label exactly one less that ours
 If we find that, we will merge and return true immediately.
 <<look for merger among neighbors>>=
     if (scanNeighbors(node, label)) {
-	return TRUE;
+	return true;
     }
 @
 {\em Note: there is a slight problem below.  We check for 
@@ -256,9 +256,9 @@ have label less than ours).  With a genrmf graph, I only saw a differnce of
 two in the number of mergers.
 }
 <<Solver methods>>=
-    Boolean scanNeighbors(Node& node, NodeLabel label);
+    bool scanNeighbors(Node& node, NodeLabel label);
 <<Solver inline implementations>>=
-INLINE Boolean PhaseSolver::scanNeighbors(Node& node, NodeLabel label)
+INLINE bool PhaseSolver::scanNeighbors(Node& node, NodeLabel label)
 {
     if (node.distance <= label) {
 //	int dist = node.distance;
@@ -276,13 +276,13 @@ INLINE Boolean PhaseSolver::scanNeighbors(Node& node, NodeLabel label)
 			     << neighbor.getId() 
 			     << " (l=" << neighbor.getLabel() << ")" << endl; );
 		merge(node, neighbor, neighborEdge);
-		return TRUE;
+		return true;
 	    }
 	    node.advanceNeighbors();
 	}
     }
 
-    return FALSE;
+    return false;
 }
 @ %def scanNeighbors
 If we scan a node and do not find a merger, we want to increase the
@@ -303,7 +303,7 @@ merger with a node labeled $l-2$.  This checks for that.
     for (EdgePtr edge = it.getNext(); edge != nil; edge=it.getNext()) {
 	Node& neighbor = *edge->getOtherNode(&node);
 	FlowAmount residCap = edge->residCapacity(node);
-	if (residCap > 0 && (neighbor.isStrong(FALSE)) == FALSE) {
+	if (residCap > 0 && (neighbor.isStrong(false)) == false) {
 	    if (neighbor.getLabel() < node.getLabel()) {
 		TRACE(trout << "Missed merger from " << node.getId() << " (l="
 		     << node.getLabel() << ") to " << neighbor.getId()
@@ -425,7 +425,7 @@ void PhaseSolver::strongPush(Node& src, Node& dest)
     while (currNode != &dest) {
 	NodePtr parent = currNode->getParentNode();
 	STATS(numPushToParent++);
-	Boolean performedSplit = currNode->pushToParent();
+	bool performedSplit = currNode->pushToParent();
 	performedSplit = splitZeroCapArc(*currNode, performedSplit);
 
 	if (performedSplit) {
@@ -443,16 +443,16 @@ didn't already split it.  It could be split or left alone depending on
 [[splitOnZeroCapacity]].  Returns true if we perform a new split.
 Otherwise, we just return the the [[alreadySplit]] parameter.
 <<Solver methods>>=
-    Boolean splitZeroCapArc(Node& node, Boolean alreadySplit);
+    bool splitZeroCapArc(Node& node, bool alreadySplit);
 <<Solver inline implementations>>=
-INLINE Boolean PhaseSolver::splitZeroCapArc(Node& node, Boolean alreadySplit)
+INLINE bool PhaseSolver::splitZeroCapArc(Node& node, bool alreadySplit)
 {
-    if (alreadySplit == FALSE && 
+    if (alreadySplit == false && 
 	node.getParentCapacity() == 0 &&
 	splitOnZeroCapacity) 
     {
 	node.split();
-	return TRUE;
+	return true;
     } 
 
     return alreadySplit;
@@ -463,13 +463,13 @@ it has positive excess, but in some cases, we can choose to treat
 a node with zero excess as strong.  We want to select that at
 runtime for experimentation.
 <<Solver methods>>=
-    Boolean isStrongNode(const Node& node);
+    bool isStrongNode(const Node& node);
 <<Solver inline implementations>>=
-INLINE Boolean PhaseSolver::isStrongNode(const Node& node)
+INLINE bool PhaseSolver::isStrongNode(const Node& node)
 {
     FlowAmount excess =  node.getExcess();
     return ((excess > 0) || ((excess == 0) && zeroDeficitIsStrong)) ?
-	    TRUE : FALSE;
+	    true : false;
 }
 @ %def isStrongNode
 Pushing on the weak side is similar in that it uses [[pushToParent]]
@@ -478,17 +478,17 @@ to the root of the branch.
 The function returns true if we perform any splits - i.e. create
 any new strong branches.
 <<Solver methods>>=
-    Boolean weakPush(Node& src);
+    bool weakPush(Node& src);
 <<Solver method implementations>>=
-Boolean PhaseSolver::weakPush(Node& src)
+bool PhaseSolver::weakPush(Node& src)
 {
-    Boolean result = FALSE;
+    bool result = false;
     NodePtr currNode = &src;
     NodePtr parent = currNode->getParentNode();
 
     while (parent != nil) {
 	STATS(numPushToParent++);
-	Boolean performedSplit = currNode->pushToParent();
+	bool performedSplit = currNode->pushToParent();
 	currNode->clearFlag(DEFERRED);
 	performedSplit = splitZeroCapArc(*currNode, performedSplit);
 
@@ -498,7 +498,7 @@ Boolean PhaseSolver::weakPush(Node& src)
 	    if (isStrongNode(*currNode)) {
 		// should worry about l=1
 		addStrongBranch(*currNode);
-		result = TRUE;
+		result = true;
 	    } 
 	}
 	currNode = parent;
@@ -522,7 +522,7 @@ Therefore, we can just relabel it here and now before adding it.
 <<check for weak root becoming strong>>=
     if (isStrongNode(*currNode)) {
 	addStrongBranch(*currNode);
-	result = TRUE;
+	result = true;
     }
 @
 In the code above, we used some flags to control some of the
@@ -533,7 +533,7 @@ arc that matches the residual capacity.  We could choose to
 either split it or leave it alone until the next push sends
 flow along the arc, which will cause an immediate split.
 <<public Solver data>>=
-    Boolean splitOnZeroCapacity;
+    bool splitOnZeroCapacity;
 @
 The second flag controls how we regard zero-deficit nodes/branches during
 the execution of the algorithm (they are always weak when start the
@@ -547,10 +547,10 @@ nodes as strong, weak roots will always have label one, we will never
 create any additional zero-deficit nodes/branches, but we have no easy
 way to find a minimal source set.
 <<public Solver data>>=
-    Boolean zeroDeficitIsStrong;
+    bool zeroDeficitIsStrong;
 <<default Solver constructor>>=
-    splitOnZeroCapacity = TRUE;
-    zeroDeficitIsStrong = FALSE;
+    splitOnZeroCapacity = true;
+    zeroDeficitIsStrong = false;
 @ %def splitOnZeroCapacity zeroDeficitIsStrong
 After we have attached the strong branch to the weak node, we need
 to renormalize the tree to push excess from the old strong root
@@ -713,7 +713,7 @@ void PhaseSolver::addStrongBranch(Node& root)
     CHECK_TREE(root, nil);
     NodeLabel label = root.getLabel();
 
-    if (branchInBucket(root) == FALSE) {
+    if (branchInBucket(root) == false) {
 	// actually add the branch
 	(this->*addBranchFunc)(root);
 	checkLowestLabel(label);
@@ -729,15 +729,15 @@ be null if it's the last node in the bucket, so we have to check
 for that too.  If it is in the bucket, we'll check its label against
 the label of the nodes already in the bucket.
 <<Solver methods>>=
-    Boolean branchInBucket(Node& root);
+    bool branchInBucket(Node& root);
 <<Solver inline implementations>>=
-INLINE Boolean PhaseSolver::branchInBucket(Node& root)
+INLINE bool PhaseSolver::branchInBucket(Node& root)
 {
-    Boolean result = FALSE;
+    bool result = false;
     if ((root.getNext() != nil) ||  
         (buckets[root.getLabel()].getTail() == &root))
     {
-	result = TRUE;
+	result = true;
 	assert(
 	    (buckets[root.getLabel()].getHead()->getLabel() == root.getLabel())
 	    || (buckets[root.getLabel()].getHead()->getParentNode() != nil)
@@ -868,7 +868,7 @@ void PhaseSolver::delayedNormalizeSolve(AddBranchPtr addFunc)
     NodePtr strongBranch = nil; 
     NodeLabel strongLabel =  0;
 
-    while (TRUE) {
+    while (true) {
 	<<get strong branch - normalize if needed>>
 	<<terminate early based on counting labels>>
 	processBranch(*strongBranch);
@@ -928,7 +928,7 @@ to it.
 void PhaseSolver::strongOnlyRenormalize(Node& strongRoot, Node& weakNode)
 {
     strongPush(strongRoot, weakNode);
-    if (weakNode.flagIsSet(DEFERRED) == FALSE) {
+    if (weakNode.flagIsSet(DEFERRED) == false) {
 	weakNode.setFlag(DEFERRED);
 	weakNode.next2 = deferredNodes;
 	deferredNodes = &weakNode;
@@ -956,9 +956,9 @@ as we use for building the list of strong nodes.  A deferred weak node
 root due to a push from a descendent node, which means it needs to be
 in the strong list.
 <<Solver methods>>=
-    Boolean performDeferredNormalizations();
+    bool performDeferredNormalizations();
 <<Solver method implementations>>=
-Boolean PhaseSolver::performDeferredNormalizations()
+bool PhaseSolver::performDeferredNormalizations()
 {
     int numWeakPushes = 0;
     int numSplittingPushes = 0;
@@ -975,7 +975,7 @@ Boolean PhaseSolver::performDeferredNormalizations()
     TRACE( trout << "Performed " << numWeakPushes << " pushes with " 
 		 << numSplittingPushes << " splitting pushes"  << endl; )
 
-    return (numSplittingPushes > 0) ? TRUE : FALSE;
+    return (numSplittingPushes > 0) ? true : false;
 }
 @ %def performDeferredNormalizations
 <<normalize deferred node>>=
@@ -1063,7 +1063,7 @@ void PhaseSolver::highestLabelSolve(AddBranchPtr addFunc)
 	    }
 	)
 	<<prune gap branch if needed>>
-	Boolean performedMerger = processBranch(*strongBranch);
+	bool performedMerger = processBranch(*strongBranch);
 	STATS(performedMerger ? 0 : numEmptyBranchScans++ );
 	checkForRelabel();
 	strongBranch = getHighestBranch();
@@ -1177,8 +1177,8 @@ Compute the bottleneck capacity in the strong and weak branches.
 <<simplex merge function>>=
     FlowAmount strongCapacity, weakCapacity;
     NodePtr strongChild, weakChild;
-    Node& strongRoot = findBottleneckArc(strong, TRUE, strongCapacity, strongChild);
-    Node& weakRoot = findBottleneckArc(weak, FALSE, weakCapacity, weakChild);
+    Node& strongRoot = findBottleneckArc(strong, true, strongCapacity, strongChild);
+    Node& weakRoot = findBottleneckArc(weak, false, weakCapacity, weakChild);
     FlowAmount mergerCapacity = edge.residCapacity(strong);
     FlowAmount excess = strongRoot.getExcess();
     TRACE( trout << "strongCapacity=" << strongCapacity <<
@@ -1436,7 +1436,7 @@ towards the original strong node.
 <<Simplex implementations>>=
 void SimplexSolver::addDegenerateBranch(Node& root)
 {
-    assert(isStrongNode(root) == FALSE);
+    assert(isStrongNode(root) == false);
     NodeLabel label = root.getLabel();
     assert(root.getNext() == nil);
 
@@ -1493,11 +1493,11 @@ process on of these, if there were no mergers (i.e. it was relabeled),
 we do not want to put it back in the bucket because we know its
 monotonicity has been restored.
 <<Simplex public declarations>>=
-    virtual Boolean processBranch(Node& root);
+    virtual bool processBranch(Node& root);
 <<Simplex implementations>>=
-Boolean SimplexSolver::processBranch(Node& root)
+bool SimplexSolver::processBranch(Node& root)
 {
-    Boolean performedMerger = FALSE;
+    bool performedMerger = false;
     degenerateBranch = root.flagIsSet(DEGENERATE_SUBTREE);
 
     if (labelCount[root.getLabel() - 1] == 0) {
@@ -1523,7 +1523,7 @@ Boolean SimplexSolver::processBranch(Node& root)
     return performedMerger;
 }
 <<Simplex private declarations>>=
-    Boolean degenerateBranch;
+    bool degenerateBranch;
 @ %def processBranch
 The code above creates degenerate branches during mergers with
 wthe bottleneck in the weak branch.  One tricky complication
@@ -1635,7 +1635,7 @@ void SimplexSolver::addStrongBranch(Node& root)
 {
     NodeExcess excess = root.getExcess();
     if (excess > 0) {
-	assert(root.flagIsSet(DEGENERATE_SUBTREE) == FALSE);
+	assert(root.flagIsSet(DEGENERATE_SUBTREE) == false);
 	PhaseSolver::addStrongBranch(root);
     } else {
 	assert(excess == 0);
@@ -1677,12 +1677,12 @@ capacity, we will return the one closest to the root of a strong
 branch or the further one in a weak branch.
 <<Simplex private declarations>>=
     Node& findBottleneckArc(Node& node, 
-			    Boolean isStrong,
+			    bool isStrong,
 			    FlowAmount& bottleneckCap, 
 			    NodePtr& bottleneckChild);
 <<Simplex implementations>>=
 Node& SimplexSolver::findBottleneckArc(Node& node, 
-				     Boolean isStrong,
+				     bool isStrong,
 				     FlowAmount& bottleneckCap, 
 				     NodePtr& bottleneckChild)
 {
@@ -2204,7 +2204,7 @@ void PhaseSolver::splittingPathPush(Node& node, int& remainingSplits)
 		     << otherNode.getId() << endl);
 	         
 	otherNode.addChild(node, *bestOutEdge);
-	Boolean split = node.pushToParent();
+	bool split = node.pushToParent();
 	if (split) {
 	    remainingSplits--;
 	}
@@ -2567,7 +2567,7 @@ void PhaseSolver::globalRelabel()
 {
     STATS(numGlobalRelabels++);
     TRACE( trout << "Begin global relabeling.  Lowest label: " << lowestLabel << endl; );
-    Boolean pruningEnabled = TRUE;
+    bool pruningEnabled = true;
     <<set initial distance labels>>
 #ifdef SINK_DIST_RELABEL
     <<load the bfs queue with sink-adj nodes without labeling>>
@@ -2765,7 +2765,7 @@ NodeLabel PhaseSolver::relabelBranch(Node& node)
 }
 @ %def relabelBranch
 If we do not split when an arc goes to zero residual capacity during 
-renormalization ([[splitOnZeroCapacity=FALSE]]), then we can have nodes in
+renormalization ([[splitOnZeroCapacity=false]]), then we can have nodes in
 a branch whose distance label is [[MAXINT]] because their parent edge has
 no residual capacity (and their are no other paths to the node).  
 In this case, we do not relabel the node.
@@ -3152,7 +3152,7 @@ the path to the root of the branch.  We do this iteratively rather
 than recursively.  Theoretically, this should yeild better performance.
 <<find bottleneck capacity to strong root>>=
     Node* currNode = &srcAdjNode;
-    while (currNode->isRootNode() == FALSE) {
+    while (currNode->isRootNode() == false) {
 	FlowAmount parentCap = currNode->getParentEdge()->getFlow();
 	if (parentCap < bottleCap) {
 	    bottleCap = parentCap;
@@ -3177,7 +3177,7 @@ this iteratively.
 <<reduce flow along path to strong root>>=
     edge.reduceFlow(bottleCap);
     currNode = &srcAdjNode;
-    while (currNode->isRootNode() == FALSE) {
+    while (currNode->isRootNode() == false) {
 	currNode->getParentEdge()->reduceFlow(bottleCap);
 	currNode = currNode->getParentNode();
     }
@@ -3195,13 +3195,13 @@ We continue until the node has zero excess.
 <<Solver method implementations>>=
 void PhaseSolver::pushRootExcess(Node& node)
 {
-    Boolean seekingSource = (node.getExcess() > 0) ? TRUE : FALSE;
+    bool seekingSource = (node.getExcess() > 0) ? true : false;
     while (node.getExcess() != 0) {
 	currentMark++;
 	FlowAmount bottleCap = (seekingSource) ? 
 	                        node.getExcess() : -node.getExcess();
 
-	Boolean found = visitNode(node, node, bottleCap, 
+	bool found = visitNode(node, node, bottleCap, 
 	                                seekingSource);
 	if (found) {
 	    TRACE( trout << "Pushing " << bottleCap 
@@ -3246,15 +3246,15 @@ of effort.  Whereas our algorithm does not waste the effort, but may
 expend more effort because it could continue `stumbling' into the
 same cycles over and over.
 <<Solver public declarations>>=
-    Boolean visitNode(Node& node, Node& prevNode, FlowAmount& bottleCap, 
-    		  Boolean seekingSource);
+    bool visitNode(Node& node, Node& prevNode, FlowAmount& bottleCap, 
+    		  bool seekingSource);
 <<Solver method implementations>>=
-Boolean
+bool
 PhaseSolver::visitNode(Node& node, Node& prevNode, FlowAmount& bottleCap, 
-                       Boolean seekingSource)
+                       bool seekingSource)
 {
     <<check for terminating recursion>>
-    Boolean result = FALSE;
+    bool result = false;
     node.flag = currentMark;
 
     node.resetIterations();
@@ -3285,13 +3285,13 @@ Note, it should be impossible to find a path to the sink/source if we
 are searching for the source/sink.
 <<check for terminating recursion>>=
     if (node.flag == currentMark) {
-	return FALSE;
+	return false;
     } else if (&node == sourceNode) {
 	assert(seekingSource);
-	return TRUE;
+	return true;
     } else if (&node == sinkNode) {
 	assert(!seekingSource);
-	return TRUE;
+	return true;
     }
 @
 To visit a node, we compute a new, tentative bottleneck capacity, but
@@ -3302,7 +3302,7 @@ reduce the flow on the arc, and break the search to return.
 to the calling function.
 <<visit neighbor node>>=
     FlowAmount newBottleCap = (bottleCap < residCap) ? bottleCap : residCap;
-    Boolean status = visitNode(neighbor, node, newBottleCap, 
+    bool status = visitNode(neighbor, node, newBottleCap, 
                                     seekingSource);
     // see if we found source/sink or a cycle
     if (status) {
@@ -3361,7 +3361,7 @@ void PhaseSolver::setInitialCapacity(double lambda)
 	Edge& edge = sourceNode->getCurrentNeighbor();
 	Node& otherNode = *edge.getDest();
 	if (&otherNode != sourceNode) {
-	    Boolean negative = edge.setInitialCapacity(lambda);
+	    bool negative = edge.setInitialCapacity(lambda);
 	    if (negative) {
 		sourceNode->removeNeighbor(edge);
 		edge.reInit(otherNode, *sinkNode);
@@ -3377,8 +3377,8 @@ void PhaseSolver::setInitialCapacity(double lambda)
 	Edge& edge = sinkNode->getCurrentNeighbor();
 	Node& otherNode = *edge.getSource();
 	if (&otherNode != sinkNode) {
-	    Boolean negative = edge.setInitialCapacity(lambda);
-	    if (negative == FALSE) {
+	    bool negative = edge.setInitialCapacity(lambda);
+	    if (negative == false) {
 		sinkNode->removeNeighbor(edge);
 		edge.reInit(*sourceNode, otherNode);
 		sourceNode->addNeighbor(edge);
@@ -3426,14 +3426,14 @@ the (weak) root which may cause the branch to become strong.
 	Node& sourceAdjNode = *edge.getDest();
 	if (&sourceAdjNode != sourceNode) {
 	    FlowAmount delta = 0;
-	    Boolean crossed = edge.increaseLambda(oldLambda, newLambda, delta);
-	    assert(crossed == FALSE);
+	    bool crossed = edge.increaseLambda(oldLambda, newLambda, delta);
+	    assert(crossed == false);
 	    if (delta > 0) {
 		STATS(numSourceInc++; );
 		edge.increaseFlow(delta);
 		sourceAdjNode.incrementExcess(delta);
 		if (sourceAdjNode.getLabel() < numNodes) {
-		    Boolean split = weakPush(sourceAdjNode);
+		    bool split = weakPush(sourceAdjNode);
 		    STATS( if(split) numSourceSplit++; );
 		}
 	    }
@@ -3456,7 +3456,7 @@ the arc to be adjacent to the source.  change in capacity.
 	Node& sinkAdjNode = *edge.getSource();
 	if (&sinkAdjNode != sinkNode) {
 	    FlowAmount delta = 0;
-	    Boolean crossed = edge.increaseLambda(oldLambda, newLambda, delta);
+	    bool crossed = edge.increaseLambda(oldLambda, newLambda, delta);
 	    if (delta > 0) {
 		STATS(numSinkInc++; );
 		if (crossed) {
@@ -3467,7 +3467,7 @@ the arc to be adjacent to the source.  change in capacity.
 		}
 		sinkAdjNode.incrementExcess(delta);
 		if (sinkAdjNode.getLabel() < numNodes) {
-		    Boolean split = weakPush(sinkAdjNode);
+		    bool split = weakPush(sinkAdjNode);
 		    STATS(if (split) numSinkSplit++; );
 		}
 	    }
@@ -3748,11 +3748,11 @@ case we have to split.  If we split a strong branch, we need to add it as
 a strong branch.  If this node is already the root of a branch, there is
 nothing to do.
 <<renormalize this node>>=
-    if (node.isRootNode() == FALSE) {
+    if (node.isRootNode() == false) {
 	FlowAmount excess = node.getExcess();
 	if (excess > 0) {
 	    // XXX - should include: STATS(numPushToParent++);
-	    Boolean performedSplit = node.pushToParent();
+	    bool performedSplit = node.pushToParent();
 	    performedSplit = splitZeroCapArc(node, performedSplit);
 	    if (performedSplit) {
 		STATS(numSplits++);
@@ -3762,7 +3762,7 @@ nothing to do.
 	    }
 	} else if (excess < 0) {
 	    // XXX - should include: STATS(numPushToParent++);		// actually it's a pull, but same idea
-	    Boolean performedSplit = node.pullFromParent();
+	    bool performedSplit = node.pullFromParent();
 	    performedSplit = splitZeroCapArc(node, performedSplit);
 	    if (performedSplit) {
 		STATS(numSplits++);
@@ -3787,7 +3787,7 @@ void PhaseSolver::highestLabelResolve(AddBranchPtr addFunc)
     NodePtr strongBranch = nil; 
     NodeLabel strongLabel =  0;
 
-    while (TRUE) {
+    while (true) {
 	<<get strong branch - normalize if needed>>
 	<<terminate early based on counting labels>>
 	processBranch(*strongBranch);
@@ -3813,7 +3813,7 @@ Our function to read a problem instance is given a file name and
 return true if it sucessfully read the problem instance from the
 specified file.
 <<Solver methods>>=
-    Boolean readDimacsInstance(const char* filename);
+    bool readDimacsInstance(const char* filename);
 @
 Our code will be divided into two steps. In the first
 steps we will determine the basic dimensions of the problem, initialize
@@ -3823,7 +3823,7 @@ of the nodes, we can initialize them and add all of their neighbors.
 The code below uses C standard I/O ([[stdio]]) because I'm too lazy
 to figure out how to use C++ I/O streams for input.  
 <<Solver method implementations>>=
-Boolean PhaseSolver::readDimacsInstance(const char* filename)
+bool PhaseSolver::readDimacsInstance(const char* filename)
 {
     FILE* fp = fopen(filename, "r");
     if (fp != NULL) {
@@ -3833,9 +3833,9 @@ Boolean PhaseSolver::readDimacsInstance(const char* filename)
 	<<initialize nodes>>
     } else {
 	perror("Unable to read problem instance");
-	return FALSE;
+	return false;
     }
-    return TRUE;
+    return true;
 }
 <<implementation header files>>=
 #include <stdio.h>
@@ -3868,7 +3868,7 @@ disk space when generating an instance.
     if (nextEdge < numEdges) {
 	cerr << "Not enough edges - expected " << numEdges << " found " 
 	     << nextEdge << endl;
-	return FALSE;
+	return false;
     }
 @ 
 Parsing the type code is a pretty simple switch statment.
@@ -3903,7 +3903,7 @@ allocate an extra node (node zero), that never really gets used.
     numTokens = sscanf(moreInfo, "%s %d %d", typeBuffer, &numNodes, &numEdges);
     if ((numTokens != 3) || (numNodes <= 0) || (numEdges <= 0)) {
 	cerr << "Invalid problem instance line: " << buffer << endl;
-	return FALSE;
+	return false;
     }
     nodes = new Node[numNodes + 1];
     edges = new Edge[numEdges];
@@ -3928,7 +3928,7 @@ for the source and `t' for the sink.
     numTokens =  sscanf(moreInfo, "%d %c", &nodeNumber, &sourceSinkFlag);
     if ((numTokens != 2) || (nodeNumber <= 0) || (nodeNumber > numNodes)) {
 	cerr << "Invalid source/sink line: " << buffer << endl;
-	return FALSE;
+	return false;
     }
 
     if (sourceSinkFlag == 's') {
@@ -3937,7 +3937,7 @@ for the source and `t' for the sink.
 	sinkNode = &nodes[nodeNumber];
     } else {
 	cerr << "Invalid source/sink line: " << buffer << endl;
-	return FALSE;
+	return false;
     }
 @ 
 An edge is specified by a source, destination and a capacity.
@@ -3952,7 +3952,7 @@ actually interpreted as the $a$ parameter.
     if ((numTokens < 3) || (source <= 0) || (source > numNodes) ||
 	(dest <= 0) || (dest > numNodes)) {
 	cerr << "Invalid edge line: " << buffer << endl;
-	return FALSE;
+	return false;
     }
 
     if (nextEdge < numEdges) {
@@ -3960,7 +3960,7 @@ actually interpreted as the $a$ parameter.
 	    // non-parametric must have non-negative capacity
 	    if (capacity < 0) {
 		cerr << "Invalid edge line: " << buffer << endl;
-		return FALSE;
+		return false;
 	    }
 	    edges[nextEdge].init(nodes[source], nodes[dest], capacity);
 	} else {
@@ -3971,7 +3971,7 @@ actually interpreted as the $a$ parameter.
 	nodeDegrees[dest]++;
     } else {
 	cerr << "Too many edges - graph should only contain " << numEdges << endl;
-	return FALSE;
+	return false;
     }
 <<local variables for reading>>=
     int nextEdge = 0;
@@ -4018,9 +4018,9 @@ initially, then our hint system in [[adjustCapacity]] will work by just
 stepping through edge array.  This function is just a bastard version of
 [[readDimacsInstance]].
 <<Solver methods>>=
-    Boolean readNewCapacities(const char* filename);
+    bool readNewCapacities(const char* filename);
 <<Solver method implementations>>=
-Boolean PhaseSolver::readNewCapacities(const char* filename)
+bool PhaseSolver::readNewCapacities(const char* filename)
 {
     FILE* fp = fopen(filename, "r");
     if (fp != NULL) {
@@ -4039,10 +4039,10 @@ Boolean PhaseSolver::readNewCapacities(const char* filename)
 	fclose(fp);
     } else {
 	perror("Unable to read new capacities");
-	return FALSE;
+	return false;
     }
 
-    return TRUE;
+    return true;
 }
 @ %def readNewCapacities
 Processing a new arc capacity is pretty straightforward - just read the
@@ -4054,7 +4054,7 @@ line and call [[adjustCapacity]].
     if ((numTokens != 3) || (source <= 0) || (source > numNodes) ||
 	(dest <= 0) || (dest > numNodes)) {
 	cerr << "Invalid edge line: " << buffer << endl;
-	return FALSE;
+	return false;
     }
 
     adjustCapacity(&edges[nextEdgeNum], source, dest, capacity);
@@ -4075,14 +4075,14 @@ void PhaseSolver::writeDimacsFlow(ostream& dout)
 }
 @ %def writeDimacsFlow
 <<header include files>>=
-    class ostream;
+    //class ostream;
 @
 We collect various statistics while the program is running.
 This method prints them into the Dimacs output file as comments.
 <<Solver methods>>=
-    virtual void writeStats(ostream& dout, Boolean writeFlow);
+    virtual void writeStats(ostream& dout, bool writeFlow);
 <<Solver method implementations>>=
-void PhaseSolver::writeStats(ostream& dout, Boolean writeFlow)
+void PhaseSolver::writeStats(ostream& dout, bool writeFlow)
 {
     <<write statistics>>
     if (writeFlow) {
@@ -4190,7 +4190,7 @@ void PhaseSolver::dumpNodes(ostream& out)
 
 	     out << setw(8) << node.getLabel();
 	     out << setw(8) <<
-		 (node.isStrong(FALSE) ? "strong" : "weak");
+		 (node.isStrong(false) ? "strong" : "weak");
 	 }
 	 out << endl;
     }
@@ -4211,7 +4211,7 @@ void PhaseSolver::checkBranches()
 	    continue;
 	}
 	if (node.isRootNode()) {
-	    if (node.checkTree(nil) == FALSE) {
+	    if (node.checkTree(nil) == false) {
 		cout << endl << "Quitting after one bad branch" << endl;
 		break;
 	    }
@@ -4232,11 +4232,11 @@ void PhaseSolver::checkMergers()
 	if ((&node == sourceNode) || (&node == sinkNode)) {
 	    continue;
 	}
-	if (node.isStrong(FALSE)) {
+	if (node.isStrong(false)) {
 	    ElIterator it = node.getNeighbors();
 	    for (EdgePtr edge = it.getNext(); edge != nil; edge=it.getNext()) {
 		Node& neighbor = *edge->getOtherNode(&node);
-		if ((neighbor.isStrong(FALSE) == FALSE) && 
+		if ((neighbor.isStrong(false) == false) && 
 		    (edge->residCapacity(node) > 0))
 		{
 		    TRACE(trout << "Found merger from " 
@@ -4260,14 +4260,15 @@ PhaseSolver::PhaseSolver()
 @
 We start with the boiler-plate implementation file. 
 <<*>>=
-// $Revision: 1.87 $, $Date: 2003/09/15 18:31:27 $
+// $Revision: 1.88 $, $Date: 2003/09/15 18:39:40 $
 // This C++ code was generated by noweb from the corresponding .nw file
 #include "PhaseSolver.h"
 #include "debug.h"
-#include <iostream.h>
 #include <fstream.h>
-#include <iomanip.h>
+#include <iostream>
+#include <iomanip>
 #include <assert.h>
+using namespace std;
 <<implementation header files>>
 
 <<Solver method implementations>>
@@ -4291,13 +4292,14 @@ Now, we'll add the simplex solver methods.
 The header defines the [[PhaseSolver]] class, its member functions, member
 data, and inline functions.  Again, we have more boiler-plate.
 <<header>>=
-// $Revision: 1.87 $, $Date: 2003/09/15 18:31:27 $
+// $Revision: 1.88 $, $Date: 2003/09/15 18:39:40 $
 // This C++ code was generated by noweb from the corresponding .nw file
 #ifndef SOLVER_H
 #define SOLVER_H
 #include "types.h"
 #include "Node.h"
-#include <iostream.h>
+#include <iostream>
+using namespace std;
 <<header include files>>
 @ We have used some pointer to member function types to select run-time
 behavior.

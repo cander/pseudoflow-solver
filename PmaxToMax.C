@@ -10,8 +10,8 @@
 #endif /*NEED_GETOPT*/
 
 // both of these are only needed for linking
-Boolean checkTree = FALSE;
-Boolean tracingEnabled = FALSE;
+bool checkTree = false;
+bool tracingEnabled = false;
 
 void 
 usage()

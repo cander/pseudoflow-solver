@@ -2,7 +2,7 @@
 #define DEBUG_H
 
 #ifdef DEBUG
-  extern Boolean checkTree;
+  extern bool checkTree;
   #define IFCHECK  if (checkTree)
   #define IFDEBUG(code) { code; }
 #else /*!DEBUG*/
@@ -28,7 +28,7 @@
 
 
 #ifdef TRACING
-    extern Boolean tracingEnabled;
+    extern bool tracingEnabled;
     #define trout cout
     #define IFTRACE(expr)		expr;
     #define TRACE(print_expression) 	if(tracingEnabled) { print_expression ; }
