@@ -250,6 +250,11 @@ a phase can be started and stopped multiple times.
 <<EdgeList method implementations>>=
 void EdgeList::removeElement(EdgePtr edgep)
 {
+    if (array[currentIndex] == edgep) {
+	array[currentIndex] = nil;
+	return;
+    } 
+
     for (int i = 0; i < size; i++) {
 	if (array[i] == edgep) {
 	    array[i] = nil;
