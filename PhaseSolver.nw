@@ -25,6 +25,137 @@ We also need to know the source and sink nodes in the graph.
 <<default Solver constructor>>=
     sourceNode = sinkNode = nil;
 @ %def sourceNode sinkNode
+\subsection{Solving}
+<<Solver methods>>=
+    void solve();
+<<Solver method implementations>>=
+void PhaseSolver::solve()
+{
+    <<initialize nodes and edges>>
+
+    NodePtr strongBranch = getLowestBranch();
+    while (strongBranch != nil) {
+	processBranch(*strongBranch);
+	strongBranch = getLowestBranch();
+    }
+
+    // convert to flow
+
+}
+@ %def solve
+We need to saturate all source- and sink.adjacent edges, label the 
+source-adjacent nodes 2, and label the others 1.
+<<initialize nodes and edges>>=
+@
+\subsection{Processing Branches}
+We process the tree one branch at a time looking for mergers or
+relabeling nodes.  This function examines
+the whole branch.  If there is a merger that generates a split with
+a lower label, the function will stop processing the branch.  If there
+are no mergers for this branch, move it to the next bucket.  For
+convenience, the function returns either the label of the new,
+lower labeled merger branch or the new label of this branch if no
+merger was detected.
+<<Solver methods>>=
+    NodeLabel processBranch(Node& root);
+<<Solver method implementations>>=
+NodeLabel PhaseSolver::processBranch(Node& root)
+{
+    NodeLabel label = root.getLabel();
+    NodeLabel newLabel = processSubtree(root);
+    if (newLabel == (label + 1)) {
+	// no merger, put it in the next bucket
+	addStrongBranch(root);
+    }
+
+    return newLabel;
+}
+@ %def processBranch
+Below is recursive code to perform the DFS scan of a node's children and to
+look for merger arcs among its neighbors.  Currently, the code
+processes the nodes in pre-order - i.e. the children are all processed
+before the neighbors of this node are scanned.
+If this function performs a merger, it returns the lowest label of
+any branches that get split off and made strong.  If such a branch
+has a lower label than the current node, we stop processing this node.
+If there is no merger, the label of this node is incremented, and we
+return this new, higher label.
+<<Solver methods>>=
+    NodeLabel processSubtree(Node& node);
+<<Solver method implementations>>=
+NodeLabel PhaseSolver::processSubtree(Node& node)
+{
+    NodeLabel label = node.getLabel();
+    <<process all children>>
+    <<look for merger amoung neighbors>>
+    node.incrementLabel();
+    node.resetIterations();
+    return node.getLabel();
+}
+@ %def processSubtree
+We process all children that have the same label as ours, [[label]].
+If a child has a higher label, we just ignore it.  By monotonicity,
+it can't have a label less than ours.  If we process the sub-tree
+and that generates a merger that results in a split with a label
+less than our current label, we quit to terminate this phase.
+<<process all children>>=
+    while (node.hasMoreChildren()) {
+	Node& child = node.getCurrentChild();
+	assert(child.getLabel() >= label);
+	if (child.getLabel() == label) {
+	    NodeLabel splitLabel = processSubtree(child);
+	    if (splitLabel < label) {
+		// got a split, quit immediately
+		return splitLabel;
+	    }
+	}
+	node.advanceChildren();
+    }
+@
+Processing neighbors is a bit different.  Here is where we look for
+a merger to a node with label exactly one less that ours.  We also
+need residual capacity from our node to the neighbor.  Given than,
+we will merge, and again we keep our eyes out for a split with 
+a lower label.
+<<look for merger amoung neighbors>>=
+    while (node.hasMoreNeighbors()) {
+	Edge& neighborEdge = node.getCurrentNeighbor();
+	Node& neighbor = *neighborEdge.getOtherNode(&node);
+	if ((neighbor.getLabel() == (label - 1)) &&
+	    (neighborEdge.residCapacity() > 0))
+	{
+	    NodeLabel splitLabel = merge(node, neighbor, neighborEdge);
+	    if (splitLabel < label) {
+		// generated a split, quit
+		return splitLabel;
+	    }
+	}
+	node.advanceNeighbors();
+    }
+@
+This function
+rehangs the strong branch from the strong node, adds the
+merger arc from $s$ to $w$, and pushes the excess from the
+old strong root to the weak root.  If pushing the excess results
+in any splitting, this function returns the lowest label of the
+newly created branches.  Note that only splits within the
+weak branch can yield labels less that $\ell$.  Because new 
+branches with labels less than $\ell$ are the only ones that
+will interrupt phase $\ell$, we are only concerned about such
+splits within the weak branch.
+<<Solver methods>>=
+    NodeLabel merge(Node& strong, Node& weak, Edge& edge);
+<<Solver method implementations>>=
+NodeLabel PhaseSolver::merge(Node& strong, Node& weak, Edge& edge)
+{
+    Node& strongRoot = *strong.rehang();
+    weak.addChild(strong, edge);
+    strongPush(&strongRoot, &weak);
+    NodeLabel splitLabel = weakPush(weak);
+
+    return splitLabel;
+}
+@ %def merge
 Push excess from the former strong root, $r_s$ to the strong node, $s$,
 and one step beyond to the weak node, $w$.
 When this finishes, the remaining excess will be stored on
@@ -41,8 +172,8 @@ void PhaseSolver::strongPush(NodePtr src, NodePtr dest)
 	NodePtr parent = currNode->getParentNode();
 	Boolean performedSplit = currNode->pushToParent();
 	if (performedSplit) {
-	    if (currNode->getExcess() > 0) {
-		addStrongBranch(currNode);
+	    if (currNode->getExcess() > 0) {	// ZERO_DEFICIT
+		addStrongBranch(*currNode);
 	    } // else - just a split, zero-deficit node?
 	}
 	currNode = parent;
@@ -54,34 +185,104 @@ to push all of the flow, but it differs in that we push all the way
 to the root of the branch, and we want to keep track of the lowest
 labeled node that we split off.
 <<Solver methods>>=
-    void weakPush(NodePtr src);
+    NodeLabel weakPush(Node& src);
 <<Solver method implementations>>=
-void PhaseSolver::weakPush(NodePtr src)
+NodeLabel PhaseSolver::weakPush(Node& src)
 {
     NodeLabel splitLabel = MAX_LABEL;
-    NodePtr currNode = src;
+    NodePtr currNode = &src;
     while (currNode->getParentNode() != nil) {
 	NodePtr parent = currNode->getParentNode();
 	Boolean performedSplit = currNode->pushToParent();
 	if (performedSplit) {
-	    if (currNode->getExcess() > 0) {
-		addStrongBranch(currNode);
+	    if (currNode->getExcess() > 0) {	// ZERO_DEFICT
+		addStrongBranch(*currNode);
 		splitLabel = currNode->getLabel();
 	    } // else - just a split, zero-deficit node?
 	}
 	currNode = parent;
     }
+
+    return splitLabel;
 }
 @ %def weakPush
+\subsection{Managing Strong Branches}
+We manage strong branches using an array of linked lists of Nodes.
+We refer to each such element in the array as a `bucket'.
+The buckets are indexed by the labels of the nodes.  Therefore,
+we need a bucket for each possible label - basically $n$ buckets.
+<<Solver data>>=
+    NodePtr*	buckets;
+<<default Solver constructor>>=
+    buckets = nil;
+@ %def buckets
+Because we process the lowest labeled branch, we need a way to find
+the strong branch quickly.  At the moment, we just search the list
+sequentially looking for the lowest labeled, non-empty bucket.  To
+speed this a bit, we keep track of the lowest labeled bucket we've
+seen.  In the future, this simple array of buckets could be replaced
+by some sort of heap.
+<<Solver data>>=
+    NodeLabel 	lowestLabel;
+<<default Solver constructor>>=
+    lowestLabel = 0;
+@ %def lowestLabel
+Adding a branch just requires finding the bucket based on the branch's
+label, and inserting it into the list.  For simplicity, we add to
+the head of the list.  This probably doesn't make any difference
+(FIFO vs. LIFO) in a lowest label algorithm, but in the future, we
+might want to experiment with this.  After adding the branch,
+we need to see if the new branch has a lower label than our previous
+lowest labeled branch.
 <<Solver methods>>=
-    void addStrongBranch(NodePtr root);
+    void addStrongBranch(Node& root);
 <<Solver method implementations>>=
-void PhaseSolver::addStrongBranch(NodePtr root)
+void PhaseSolver::addStrongBranch(Node& root)
 {
-    assert(root->getExcess() > 0);
+    NodeLabel label = root.getLabel();
+    assert((root.getExcess() > 0) && (label > 0));	// ZERO_DEFICT
     // put in correct bucket
+    if (buckets[label] == nil) {
+	root.setNextNil();
+	buckets[label] = &root;
+    } else {
+	root.setNext(buckets[label]);
+	buckets[label] = &root;
+    }
     // look for new, lower label
+    if (label < lowestLabel) {
+	lowestLabel = label;
+    }
 }
+@ %def addStrongBranch
+As the algorithm runs, we need to remove the lowest labeled branch.
+First we need to locate the lowest labeled bucket, then we need to
+remove the head of the list.  If there are no more strong branches,
+we just return [[nil]].
+
+The search always starts at the [[lowestLabel]] bucket.  As we
+scan buckets, we increment [[lowestLabel]] until we find a 
+non-empty bucket.
+{\em What exactly should the termination condition be?}
+<<Solver methods>>=
+    NodePtr getLowestBranch();
+<<Solver implementations>>=
+NodePtr PhaseSolver::getLowestBranch()
+{
+    NodePtr result = nil;
+    while (lowestLabel < numNodes) {
+	if (buckets[i] != nil) {
+	    result = buckets[i];
+	    buckets[i] = result.getNext();
+	    break;
+	} else {
+	    lowestLabel++;
+	}
+    }
+
+    return result;
+}
+@ %def getLowestBranch
 <<Solver inline implementations>>=
 <<header include files>>=
 <<C++ overhead>>=
@@ -177,9 +378,11 @@ allocate an extra node (node zero), that never really gets used.
     }
     nodes = new Node[numNodes + 1];
     edges = new Edge[numEdges];
+    buckets = new NodePtr[numNodes + 1];
     nodeDegrees = new int[numNodes + 1];
     for (int i = 0; i <= numNodes; i++) {
 	nodeDegrees[i] = 0;
+	buckets[i] = nil;
     }
 <<local variables for reading>>=
     int numTokens = 0;
