@@ -1944,7 +1944,7 @@ void PhaseSolver::convertToFlow()
 {
     currentMark = 1024;
     <<replace source and sink arcs>>
-    //printExcesses();
+    <<prune zero flow arcs>>
     for (int i = 1; i <= numNodes; i++) {
 	Node& node = nodes[i];
 	if (&node == sourceNode || &node == sinkNode) {
@@ -1954,28 +1954,6 @@ void PhaseSolver::convertToFlow()
 	    pushRootExcess(node);
 	}
     }
-    //printExcesses();
-}
-<<Solver public declarations>>=
-    void printExcesses();
-<<Solver method implementations>>=
-void PhaseSolver::printExcesses()
-{
-    int positiveExcess = 0;
-    int negativeExcess = 0;
-    for (int i = 1; i <= numNodes; i++) {
-	Node& node = nodes[i];
-	if (&node == sourceNode || &node == sinkNode) {
-	    continue;
-	}
-	if (node.getExcess() < 0) {
-	    negativeExcess += node.getExcess();
-	} else if (node.getExcess() > 0) {
-	    positiveExcess += node.getExcess();
-	}
-    }
-    cout << "positive excess=" << positiveExcess 
-         << " negative excess=" << negativeExcess << endl;
 }
 @ %def convertToFlow
 <<Solver data>>=
@@ -1986,6 +1964,8 @@ we removed the arcs from/to the
 source/sink to prevent flow from going back to the source/sink.
 Now, we actaully want to be able to get to the source and sink,
 so we add them back.
+{\em Is this needed?  If we removed the arc, it has zero
+     flow, so we don't be using it, right?}
 <<replace source and sink arcs>>=
     for (int i = 0 ; i < numEdges; i++) {
 	Edge& edge = edges[i];
@@ -2004,12 +1984,20 @@ so we add them back.
 	if (&edgeDest == sinkNode) {
 	    edgeSource.addNeighbor(edge);
 	}
-	if (edge.getFlow() == 0) {
-	    if ((&edgeSource != sinkNode) && (&edgeDest != sourceNode)) {
-		edgeSource.removeNeighbor(edge);
-		edgeDest.removeNeighbor(edge);
-	    }
+    }
+@
+We also want to remove arcs with zero flow on them because we know
+we don't need them to push flow back.  We iterate over the nodes
+instead of the arcs so that we can use [[removeCurrentNeighbor]]
+via [[pruneZeroFlowArcs]] which is much more efficient than
+removing an arbitrary neighbor arc.
+<<prune zero flow arcs>>=
+    for (int i = 1; i <= numNodes; i++) {
+	Node& node = nodes[i];
+	if (&node == sourceNode || &node == sinkNode) {
+	    continue;
 	}
+	node.pruneZeroFlowArcs();
     }
 @ 
 <<Solver public declarations>>=
