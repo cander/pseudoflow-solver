@@ -71,42 +71,75 @@ no choice.
 <<EdgeList method implementations>>=
 void EdgeList::compactList()
 {
-    int start = 0;
-    Boolean isEmpty = TRUE;
-    while (start < size) {
-	int hole;
-	for (hole = 0; hole < size; hole++) {
-	    if (array[hole] == nil) {
-		break;
-	    }
-	}
-	int nonHole;
-	for (nonHole = hole + 1; nonHole < size; nonHole++) {
-	    if (array[nonHole] != nil) {
-		break;
-	    }
-	}
-	if (nonHole < size) {
-	    array[hole] = array[nonHole];
-	    array[nonHole] = nil;
-	    isEmpty = FALSE;
-	}
-	start = nonHole;
-	if (currentIndex <= nonHole) {
-	    currentIndex = hole;
-	}
+cout << "EdgeList::compactList" << endl;
+    int hole;
+    <<search for first hole>>
+    int nonHole;
+    <<search for first non-hole>>
+    <<check for big hole at end>>
+
+    while (nonHole < size) {
+	<<copy from non-hole to hole>>
+	<<advance hole and nonHole>>
     }
-    if (isEmpty) {
-	currentIndex = size = 0;
-    } else {
-	for (size = 0; size < capacity; size++) {
-	    if (array[size] == nil) {
-		break;
-	    }
-	}
+    if (currentIndex >= size) {
+	currentIndex = hole;
     }
+    size = hole;
 }
 @ %def compactList
+It's pretty easy to find a hole.  It had better be before the end of the
+list.  Otherwise, the list is full, and there's nothing we can do about it.
+<<search for first hole>>=
+    for (hole = 0; hole < size; hole++) {
+	if (array[hole] == nil) {
+	    break;
+	}
+    }
+    assert(hole < size);
+@ Similarly, it's easy to find a non-hole after the hole.  It's OK if it runs
+past the end of the list.
+<<search for first non-hole>>=
+    for (nonHole = hole + 1; nonHole < size; nonHole++) {
+	if (array[nonHole] != nil) {
+	    break;
+	}
+    }
+@ After searching for the first hole and non-hole, if we didn't find a non-hole,
+there are two possibilites: the list is empty or it contains some elements
+followed by all empty slots to the end of the list.  If the list contains
+any elements, the index of the first hole equals size of the list.
+Either way, we don't have to copy anything around and we are done.
+<<check for big hole at end>>=
+    if (nonHole >= size) {
+	if (hole == 0) {
+	    currentIndex = size = 0;
+	} else {
+	    size = hole;
+	}
+	return;
+    }
+@ When we have a pointer to the hole and non-hole, we can copy one element 
+from into the hole.
+<<copy from non-hole to hole>>=
+    array[hole] = array[nonHole];
+    array[nonHole] = nil;
+@ If the current index is between the hole and the non-hole, it should point
+at the hole (which just got filled in).
+<<copy from non-hole to hole>>=
+    if ((currentIndex > hole) && (currentIndex <= nonHole)) {
+	currentIndex = hole;
+    }
+@ Now, we know the next element after the hole is the next hole.  Then we need
+to search for the next non-hole.
+<<advance hole and nonHole>>=
+    hole++;
+    assert((hole < size) && (array[hole] == nil));
+    nonHole++;
+    while ((nonHole < size) && (array[nonHole] == nil)) {
+	nonHole++;
+    }
+@ 
 We need methods to iterate over these lists of edges.  We have no
 requirement to support multiple simultaneous iterations, so we can
 implement the functions and the iteration state directly on the
@@ -296,8 +329,8 @@ hashtable, but it might be difficult to iterate over that given that
 a phase can be started and stopped multiple times.
 <<EdgeList methods>>=
     void removeElement(EdgePtr edgep);
-<<EdgeList method implementations>>=
-void EdgeList::removeElement(EdgePtr edgep)
+<<EdgeList inline implementations>>=
+INLINE void EdgeList::removeElement(EdgePtr edgep)
 {
     if (array[currentIndex] == edgep) {
 	array[currentIndex] = nil;
