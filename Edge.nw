@@ -73,7 +73,8 @@ INLINE Boolean Edge::isIncident(const NodePtr node) const
     capacity = flow = 0;
 <<Edge methods>>=
     FlowAmount getFlow() const { return flow; }
-@ %def capacity flow
+    FlowAmount getCapacity() const { return capacity; }
+@ %def capacity flow getFlow getCapacity
 Although the capacity of an edge is fixed during the duration of
 the algorithm, the flow varies.  We usually speak of {\em increasing}
 the flow, but this is done with respect to the current orientation
@@ -271,8 +272,9 @@ capacity with its real sign (not absolute valued).  Then we can compute
 the new capacity with the new lambda, taking the absolute value if necessary.
 <<Edge methods>>=
     Boolean increaseLambda(double oldLambda, double newLambda, FlowAmount& delta);
-<<Edge method implementations>>=
-Boolean Edge::increaseLambda(double oldLambda, double newLambda, FlowAmount& delta)
+<<Edge inline implementations>>=
+INLINE Boolean Edge::increaseLambda(double oldLambda, 
+                                    double newLambda, FlowAmount& delta)
 {
     assert(newLambda >= oldLambda);
     Boolean crossedZero = FALSE;
@@ -281,7 +283,7 @@ Boolean Edge::increaseLambda(double oldLambda, double newLambda, FlowAmount& del
     FlowAmount newCapacity  = (FlowAmount)(aParam + bParam * newLambda);
     delta = newCapacity - oldCapacity;
     capacity = iabs(newCapacity);
-    crossedZero = ((oldCapacity < 0) && (newCapacity > 0)) ? TRUE : FALSE;
+    crossedZero = ((oldCapacity < 0) && (newCapacity >= 0)) ? TRUE : FALSE;
 #endif PARAM_SENSE
 
     return crossedZero;
