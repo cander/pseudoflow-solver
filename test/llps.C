@@ -13,6 +13,8 @@ extern char* buildFlags;
 
 // set to TRUE to cause (time consuming) tree checks to take place
 Boolean checkTree = FALSE;
+// set to TRUE to print verbose tracing messages
+Boolean tracingEnabled = FALSE;
 
 void 
 usage()
@@ -22,6 +24,7 @@ usage()
     cerr << "\t -f   write the flow values for each arc" << endl;
     cerr << "\t -g   specify the global relabel frequency" << endl;
     cerr << "\t -t   perform checkTree operations frequently" << endl;
+    cerr << "\t -x   perform verbose tracing of operations" << endl;
     cerr << "\t -I   initialization function: simple, path, saturate, greedy " << endl;
     cerr << "\t -s   specify the number of splits for path init" << endl;
     cerr << "\t -B   strong bucket management: fifo, lifo, wave" << endl;
@@ -48,7 +51,7 @@ main(int argc, char** argv)
 
     // parse arguments
     int ch;
-    while ((ch = getopt(argc, argv, "dfg:tI:s:M:N:B:O:L:")) != EOF) {
+    while ((ch = getopt(argc, argv, "dfg:txI:s:M:N:B:O:L:")) != EOF) {
 	switch (ch) {
 	case 'd':
 	    dumpNodes = TRUE;
@@ -61,6 +64,9 @@ main(int argc, char** argv)
 	    break;
 	case 't':
 	    checkTree = TRUE;
+	    break;
+	case 'x':
+	    tracingEnabled = TRUE;
 	    break;
 	case 'I':
 	    if (strcmp(optarg, "simple") == 0) {

@@ -23,9 +23,12 @@
 
 
 #ifdef TRACING
+    extern Boolean tracingEnabled;
     #define trout cout
-    #define TRACE(print_expression) 	print_expression ;
+    #define IFTRACE(expr)		expr;
+    #define TRACE(print_expression) 	if(tracingEnabled) { print_expression ; }
 #else
+    #define IFTRACE(expr)		;
     #define TRACE(print_expression)	 ;
 #endif
 
