@@ -165,6 +165,9 @@ Another way to add an element to the list is to add it at the first hole
 or if there are no holes, to append it.  Currently, we use a brute-force
 search for a hole, but in the future, we can speed this by keeping
 track of the lowest indexed hole we create.
+If this method adds the edge to a hole `behind' the current
+index, we do not bother to back up the current index - i.e. we
+assume that we don't need to scan what we are adding.
 
 {\em When this is made more efficient, it should be inlined.
      To track the lowest hole, we should init the value to `size'
@@ -188,6 +191,51 @@ void EdgeList::addHoleElement(EdgePtr edgep)
     }
 }
 @ %def addHoleElement
+Yet another way to add an element (required by simplex) is to 
+add it at or after the current element, or if that doesn't work
+add it to a hole.  No matter where we add it, we need to make
+sure it gets scanned by the current index. So we might need to
+update the current index if we add it to a hole behind the current
+index.  It is safe (but a bit inefficient) to back up the
+current index in the list.
+<<EdgeList methods>>=
+    void addAfterCurrent(EdgePtr edgep);
+<<EdgeList method implementations>>=
+void EdgeList::addAfterCurrent(EdgePtr edgep)
+{
+    <<add after the current element>>
+    <<add before current element and back up>>
+}
+@ %def addAfterCurrent
+First we scan from the current index to the end of the list
+looking for a hole.  If we find one, just add the element and
+return because we don't need to udpate the index.
+<<add after the current element>>=
+    for (int index = currentIndex; index < capacity; index++) {
+	if (array[index] == nil) {
+	    array[index] = edgep;
+	    if (index == size) {
+		size++;
+	    }
+	    return;
+	}
+    }
+@ If that failed, we start at the element before the current
+index and scan backwards.  If we find a hole, we'll insert the
+element and update the current index.
+<<add before current element and back up>>=
+    for (int index = (currentIndex - 1); index >= 0; index--) {
+	if (array[index] == nil) {
+	    array[index] = edgep;
+	    currentIndex = index;
+	    return;
+	}
+    }
+@ If both of those failed, something is seriously wrong;
+just throw an assertion violation.
+<<add before current element and back up>>=
+    assert(FALSE);
+@
 When a node is begin split from its parent, we need to remove a child
 edge which is probably not the current edge.  At the moment, we implement
 this via a linear search.  In the future, perhaps we could use a 
@@ -214,8 +262,9 @@ we should shrink the size of the list.  If there are holes
 We should also back up the current element as we go.
 <<adjust the list size>>=
     if (i == (size - 1)) {
-	int endProbe = size - 2;
-	while (size > 0) {
+	size--;
+	int endProbe = i - 1;
+	while (endProbe >= 0) {
 	    if (array[endProbe] == nil) {
 		size--;
 		endProbe--;
