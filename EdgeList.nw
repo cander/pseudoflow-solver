@@ -160,6 +160,25 @@ INLINE void EdgeList::addCurrentElement(EdgePtr edgep)
     }
 }
 @ %def addCurrentElement
+When a node is begin split from its parent, we need to remove a child
+edge which is probably not the current edge.  At the moment, we implement
+this via a linear search.  In the future, perhaps we could use a 
+hashtable, but it might be difficult to iterate over that given that
+a phase can be started and stopped multiple times.
+<<EdgeList methods>>=
+    void removeElement(EdgePtr edgep);
+<<EdgeList method implementations>>=
+void EdgeList::removeElement(EdgePtr edgep)
+{
+    for (int i = 0; i < size; i++) {
+	if (array[i] == edgep) {
+	    array[i] = nil;
+	    return;
+	}
+    }
+    assert("failed to find edge");	// force assertion failure
+}
+@ %def removeElement
 Here are some direct accessor methods for use during debugging.
 These really should be 'hidden' and shared only to [[friends]].
 <<EdgeList debug methods>>=
