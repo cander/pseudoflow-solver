@@ -1,6 +1,6 @@
 #include "PhaseSolver.h"
 
-#include <iostream.h>
+#include <stdio.h>
 #include <fstream.h>
 #include <time.h>
 #include <stdlib.h>
@@ -51,40 +51,100 @@ main(int argc, char** argv)
     const char* instanceName = argv[optind];
     const char* outputName = argv[optind + 1];
 
-    PhaseSolver* solver = new PhaseSolver();
-    Boolean readOK =  solver->readDimacsInstance(instanceName);
+    FILE* in = fopen(instanceName, "r");
+    if (in == NULL) {
+	perror("Cannot open input instance.");
+	exit(1);
+    }
+    FILE* out = fopen(outputName, "w");
+    if (out == NULL) {
+	perror("Cannot open output instance.");
+	exit(1);
+    }
+    fprintf(out, "c  converted from %s with lambda=%f\n", instanceName, lambdaVal);
 
-    if (readOK == FALSE) {
-	cout << "CANNOT READ INSTANCE" << endl;
-	exit(-1);
-	return 1;
+    char line[1024];
+    int sourceId = -1;
+    int sinkId = -1;
+
+    for (;;) {
+	char* str = fgets(line, 1024, in);
+	if (str == NULL) {
+	    break;
+	}
+
+	int ch = *str;
+	char c1, c2;
+	int id, head, tail, aParam;
+	int ntoks;
+	double bParam;
+
+	switch(ch) {
+	case 'a':
+	    ntoks = sscanf(line, "%c %d %d %d %lf", &c1, &tail, &head, &aParam, &bParam);
+	    if (ntoks == 5) {
+		int cap = aParam;
+		// parametric line
+		if (bParam != 0) {
+		    cap = (int)(aParam + bParam * lambdaVal);
+		    if (head == sinkId) {
+			if (bParam > 0) {
+			    // it's a mining arc
+			    if (cap < 0) {
+				// leave it at the sink - but negate the cap
+				cap = -cap;
+			    } else {
+				// move it to the source
+				head = tail;
+				tail = sourceId;
+			    }
+			} else {
+			    // "normal" graph
+			    if (cap < 0) {
+				// move it to source with postive cap
+				head = tail;
+				tail = sourceId;
+				cap = -cap;
+			    }
+			}
+		    } else if (tail == sourceId) {
+			// source-arc, b is always > 0
+			if (cap < 0) {
+			    // move it to the sink
+			    tail = head;
+			    head = sinkId;
+			    cap = -cap;
+			}
+		    }
+		}  else {
+		    // have a zero b value
+		    if ((head == sinkId) && (cap < 0)) {
+			// mining block
+			cap = -cap;
+		    }
+		}
+		assert(cap >= 0);
+		fprintf(out, "a %d %d %d\n", tail, head, cap);
+		continue;
+	    }
+	    break;
+	case 'n':
+	    sscanf(line, "%c %d %c", &c1, &id, &c2);
+	    if (c2 == 's') {
+		sourceId = id;
+	    } else if (c2 == 't') {
+		sinkId = id;
+	    }
+	    break;
+	}
+
+	// just copy the line to the output
+	fprintf(out, line);
     }
 
-    cout << "read problem instance OK" << endl;
+    fclose(out);
 
-    ofstream dout(outputName, ios::out);
-    if (dout == nil) {
-	cerr << "Unable to open output file: " << outputName << endl;
-	return 1;
-    }
 
-    time_t now = time(0);
-    dout << "c" << endl;
-    dout << "c  instance: " << instanceName << endl;
-    dout << "c  convertedTime: " << ctime(&now);
-    dout << "c  by PmaxToMax.C" << endl;
-    dout << "c  lambda: " << lambdaVal << endl;
-
-    dout << "c  argv: ";
-    for (char** ap = argv; *ap != nil; ap++) {
-	dout << *ap << " ";
-    }
-    dout << endl;
-
-    solver->setInitialCapacity(lambdaVal);
-    solver->writeInstance(dout);
-
-    dout.close();
 
     return 0;
 }
