@@ -26,12 +26,15 @@ by one.
 public:
     NodeLabel getLabel() const;
     void incrementLabel();
+    void setLabel(NodeLabel l);
 <<Node inline implementations>>=
 INLINE NodeLabel Node::getLabel() const
 { return label; }
 INLINE void Node::incrementLabel()
 { label++; }
-@ %def getLabel incrementLabel
+INLINE void Node::setLabel(NodeLabel l)
+{ label = l; }
+@ %def getLabel incrementLabel setLabel
 To represent the graph, each node needs to store an list of neighbors.
 To represent the tree, each node has list of children, which allows
 us to search from the root down the tree.  
@@ -49,6 +52,15 @@ it to the neighbor list.
 void Node::addNeighbor(Edge& edge)
 { neighbors.appendEdge(&edge); }
 @ %def addNeighbor
+During initialization, we remove arc from/to source- and sink-
+adjacent nodes so that we don't scan them and try to push flow back along
+these arcs.
+<<Node methods>>=
+    void removeNeighbor(Edge& edge);
+<<Node method implementations>>=
+void Node::removeNeighbor(Edge& edge)
+{ neighbors.removeElement(&edge); }
+@ %def removeNeighbor
 In order to scan from a node back up to the root, each node needs
 to have a pointer to its parent.  During push operations, we also
 need to know the residual capacity of the edge between the parent
@@ -273,7 +285,7 @@ Boolean Node::pushToParent()
     assert(parentEdge != nil);
     Edge& edge = *parentEdge;
     Node& parent = *(edge.getOtherNode(this));	// use getHead instead?
-    assert(parent.excess == 0);
+    assert(parent.excess <= 0);
     assert(edge.residCapacity() > 0);
 
     if (edge.residCapacity() > excess) {	// ZERO_DEFICT
@@ -290,7 +302,7 @@ gets all of our excess, our excess
 becomes zero, and the flow amount on the edge increases.
 <<push without splitting>>=
     FlowAmount flow = excess;
-    parent.excess = flow;
+    parent.excess += flow;
     excess = 0;
     edge.increaseFlow(flow);
 @
@@ -299,9 +311,10 @@ as much flow as there is residual capacity on the arc, and we split
 the current node when done.
 <<push and split>>=
     FlowAmount flow = edge.residCapacity();
-    parent.excess = flow;
+    parent.excess += flow;
     excess -= flow;
     edge.increaseFlow(flow);
+    edge.toggleOrientation();
     split();
 @
 We need a default constructor because we will be creating an
