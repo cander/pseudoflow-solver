@@ -9,12 +9,12 @@
 void 
 usage()
 {
-    cerr << "Usage: llps [-d] [-f] input-graph flow-output" << endl;
+    cerr << "Usage: llps [-d] [-f] [-I init] [-N norm] [-B branch] input-graph flow-output" << endl;
     cerr << "\t -d   dump the final disposition of each node" << endl;
     cerr << "\t -f   write the flow values for each arc" << endl;
-    cerr << "\t -n   use delayed normalization solver" << endl;
-    cerr << "\t -p   use the greedyPushTree method to initialize" << endl;
-    cerr << "\t -s   use the saturateAll method to initialize" << endl;
+    cerr << "\t -I   specify initialization function" << endl;
+    cerr << "\t -N   specify normalization method" << endl;
+    cerr << "\t -B   specify strong bucket management" << endl;
 }
 
 int 
@@ -28,7 +28,7 @@ main(int argc, char** argv)
 
     // parse arguments
     int ch;
-    while ((ch = getopt(argc, argv, "dfnps")) != EOF) {
+    while ((ch = getopt(argc, argv, "dfI:N:B:")) != EOF) {
 	switch (ch) {
 	case 'd':
 	    dumpNodes = TRUE;
@@ -36,15 +36,46 @@ main(int argc, char** argv)
 	case 'f':
 	    writeFlow = TRUE;
 	    break;
-	case 'n':
-	    solverFunc = &PhaseSolver::delayedNormalizeSolve;
+	case 'I':
+	    if (strcmp(optarg, "simple") == 0) {
+		initFunc = &PhaseSolver::buildSimpleTree;
+	    } else if (strcmp(optarg, "path") == 0) {
+		initFunc = &PhaseSolver::buildBlockingPathTree;
+	    } else if (strcmp(optarg, "saturate") == 0) {
+		initFunc = &PhaseSolver::saturateAllArcs;
+	    } else {
+		cerr << "Invalid initialization option " << optarg << endl;
+		usage();
+		return 1;
+	    }
 	    break;
-	case 'p':
-	    initFunc = &PhaseSolver::buildBlockingPathTree;
+
+	case 'N':
+	    if (strcmp(optarg, "delayed") == 0) {
+		solverFunc = &PhaseSolver::delayedNormalizeSolve;
+	    } else if (strcmp(optarg, "normal") == 0) {
+		solverFunc = &PhaseSolver::solve;
+	    } else {
+		cerr << "Invalid normalization option " << optarg << endl;
+		usage();
+		return 1;
+	    }
 	    break;
-	case 's':
-	    initFunc = &PhaseSolver::saturateAllArcs;
+
+	case 'B':
+	    if (strcmp(optarg, "fifo") == 0) {
+		addBranchFunc = &PhaseSolver::addBranchFifo;
+	    } else if (strcmp(optarg, "lifo") == 0) {
+		addBranchFunc = &PhaseSolver::addBranchLifo;
+	    } else if (strcmp(optarg, "wave") == 0) {
+		addBranchFunc = &PhaseSolver::addBranchWave;
+	    } else {
+		cerr << "Invalid branch-management option " << optarg << endl;
+		usage();
+		return 1;
+	    }
 	    break;
+
 	default:
 	    usage();
 	    return 1;
