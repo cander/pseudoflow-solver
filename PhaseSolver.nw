@@ -54,27 +54,35 @@ We need to saturate all source- and sink.adjacent edges, label the
 source-adjacent nodes 2, and label the others 1.
 When we saturate an edge, we do {\em not} toggle its orientation.
 This will prevent flow from going back to either the source
-or the sink.
+or the sink.  
+
+There is a slight trick in handling nodes that are
+adjacent to both the source and sink.  We increment or decrement
+their excess as we process the edges.  Afterwards, when we scan
+the nodes, we look at the final excess to determine if the 
+node is strong (labeled 2) or weak (labeled 1).
 <<initialize nodes and edges>>=
     for (int i = 0 ; i < numEdges; i++) {
 	Edge& edge = edges[i];
-	// XXX need to worry about node that is adjacent to src and sink
 	if (edge.getTail() == sourceNode) {
 	    FlowAmount excess = edge.saturate();
-	    edge.getHead()->setLabel(2);
-	    edge.getHead()->setExcess(excess);
-	    edge.getHead()->removeNeighbor(edge);
+	    Node& srcNode = *edge.getHead();
+	    srcNode.removeNeighbor(edge);
+	    srcNode.incrementExcess(excess);
 	} else if (edge.getHead() == sinkNode) {
 	    FlowAmount excess = edge.saturate();
-	    edge.getTail()->setExcess(-excess);
-	    edge.getTail()->removeNeighbor(edge);
+	    Node& sinkNode = *edge.getTail();
+	    sinkNode.decrementExcess(excess);
+	    sinkNode.removeNeighbor(edge);
 	}
     }
     for (int i = 1; i <= numNodes; i++) {
-	if (nodes[i].getLabel() == 2) {
-	    addStrongBranch(nodes[i]);
+	Node& node = nodes[i];
+	if (node.getExcess() > 0) {	// ZERO DEFICIT
+	    node.setLabel(2);
+	    addStrongBranch(node);
 	} else {
-	    nodes[i].setLabel(1);
+	    node.setLabel(1);
 	}
     }
 @
@@ -519,6 +527,7 @@ void PhaseSolver::writeDimacsFlow(const char* filename)
     <<write header>>
     dout << "s " << 0 << endl;
     <<dump arcs>>
+    dumpNodes(dout);
     dout.close();
 }
 @ %def writeDimacsFlow
@@ -543,24 +552,27 @@ print them out.
 Here is a new method to print the final disposition of all of the nodes
 in the graph.  
 <<Solver methods>>=
-    void dumpNodes();
+    void dumpNodes(ostream& out);
+<<header include files>>=
+class ostream;
 <<Solver method implementations>>=
-void PhaseSolver::dumpNodes()
+void PhaseSolver::dumpNodes(ostream& out)
 {
-    cout << " Node id  excess  strong/weak" << endl;
+    out << "c" << endl
+        << "c Node id  excess  strong/weak" << endl;
 
     for (int i = 1; i <= numNodes; i++) {
 	Node& node = nodes[i];
-	cout << setw(8) << node.getId() << setw(8);
+	out << "c " << setw(8) << node.getId() << " " << setw(8);
 	if (&node == sourceNode) {
-	    cout << "source";
+	    out << "source";
 	} else if (&node == sinkNode) {
-	    cout << "sink";
+	    out << "sink";
 	} else {
-	     cout << node.getExcess() << setw(8)
+	     out << node.getExcess() << setw(8)
 		  << (node.isStrong() ? "strong" : "weak");
 	 }
-	 cout << endl;
+	 out << endl;
     }
 }
 @ %def dumpNodes
