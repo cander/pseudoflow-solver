@@ -53,11 +53,58 @@ to the list.  The simplist is to add an element to the end of the list.
 <<EdgeList method implementations>>=
 void EdgeList::appendEdge(EdgePtr edgep)
 {
+    if (size == capacity) {
+	compactList();
+    }
     assert((array != nil) && (size < capacity));
     array[size] = edgep;
     size++;
 }
 @ %def appendEdge
+Sometimes we can end up with a number of holes in the list (possibly
+the whole list) and we need to compact the list to move the holes
+to the end.  In general we try to avoid doing this often (e.g. 
+everytime we remove an element), but we have found cases where we have
+no choice.
+<<EdgeList methods>>=
+    void compactList();
+<<EdgeList method implementations>>=
+void EdgeList::compactList()
+{
+    int newSize = size;
+    int start = 0;
+    Boolean isEmpty = TRUE;
+    while (start < size) {
+	int hole;
+	for (hole = 0; hole < size; hole++) {
+	    if (array[hole] == nil) {
+		break;
+	    }
+	}
+	int nonHole;
+	for (nonHole = hole + 1; nonHole < size; nonHole++) {
+	    if (array[nonHole] != nil) {
+		break;
+	    }
+	}
+	if (nonHole < size) {
+	    array[hole] = array[nonHole];
+	    array[nonHole] = nil;
+	    newSize--;
+	    isEmpty = FALSE;
+	}
+	start = nonHole;
+	if (currentIndex <= nonHole) {
+	    currentIndex = hole;
+	}
+    }
+    if (isEmpty) {
+	currentIndex = size = 0;
+    } else {
+	size = newSize;
+    }
+}
+@ %def compactList
 We need methods to iterate over these lists of edges.  We have no
 requirement to support multiple simultaneous iterations, so we can
 implement the functions and the iteration state directly on the
