@@ -559,20 +559,14 @@ that every line is identified by an initial type character followed
 by arguments.  After printing header information, we print the
 total flow amount and the flow on each arc.
 <<Solver methods>>=
-    void writeDimacsFlow(const char* filename);
+    void writeDimacsFlow(ostream& dout);
 <<Solver method implementations>>=
-void PhaseSolver::writeDimacsFlow(const char* filename)
+void PhaseSolver::writeDimacsFlow(ostream& dout)
 {
-    ofstream dout(filename, ios::out);
-    if (dout == nil) {
-	cerr << "Unable to open output file: " << filename << endl;
-	return;
-    }
     <<write header>>
     dout << "s " << 0 << endl;
     <<dump arcs>>
     dumpNodes(dout);
-    dout.close();
 }
 @ %def writeDimacsFlow
 <<write header>>=
