@@ -44,10 +44,10 @@ us to search from the root down the tree.
 We can nodes add to these lists.  Adding a neighbor simply adds
 it to the neighbor list.  
 <<Node methods>>=
-    void addNeighbor(EdgePtr nodep);
+    void addNeighbor(Edge& edge);
 <<Node method implementations>>=
-void Node::addNeighbor(EdgePtr edgep)
-{ neighbors.appendEdge(edgep); }
+void Node::addNeighbor(Edge& edge)
+{ neighbors.appendEdge(&edge); }
 @ %def addNeighbor
 In order to scan from a node back up to the root, each node needs
 to have a pointer to its parent.  During push operations, we also
@@ -123,6 +123,11 @@ orientation of the two nodes, we need to toggle the direction of
 the edge.  Finally, the current node is the root of a sub-tree, so
 its parent edge is set to [[nil]].
 
+Because this procedure must ultimately scan up to the root of the
+branch, and we don't have any easy way to compute the root, we
+return the root to the caller so that it knows which is the root
+with excess to push.
+
 As indicated, the code is written as a recursive function because
 it is easiest to code that way.  In the future, if the function
 call overhead becomes a bottleneck, we can recode it iteratively.
@@ -135,22 +140,28 @@ in the children array of the parent of $v$.  This makes it simple
 and fast to find $v$ in its parent's children array.
 
 <<Node methods>>=
-    void rehang();
+    NodePtr rehang();
 <<Node method implementations>>=
-void Node::rehang()
+NodePtr Node::rehang()
 {
+    NodePtr oldRoot = nil;
     NodePtr parentNode = getParentNode();
+
     if (parentNode != nil) {
 	assert (label == parentNode->label);
 	EdgePtr edge = parentEdge;
 	parentNode->children.removeCurrentElement(edge);
-	parentNode->rehang();
+	oldRoot = parentNode->rehang();
 
 	parentNode->parentEdge = edge;
 	children.addCurrentElement(edge);
 	edge->toggleOrientation();
 	parentEdge = nil;
+    } else {
+	oldRoot = this;
     }
+
+    return oldRoot;
 }
 @
 A node can also have excess flow associated with it.  Typically,
