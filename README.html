@@ -8,8 +8,10 @@
 <center>
 <h1>Pseudoflow Solver Software</h1></center>
 
-<center><i>Charles Anderson</i>
-<br><i><a href="mailto:cander@ieor.berkeley.edu">cander@ieor.berkeley.edu</a></i></center>
+<center>
+<i><a href="mailto:hochbaum@ieor.berkeley.edu">Dorit S. Hochbaum</a></i> and
+<i><a href="mailto:cander@ieor.berkeley.edu">Charles Anderson</a></i>
+</center>
 
 <h2>Introduction</h2>
 In this directory, you will find the source code for an implementation
@@ -23,15 +25,20 @@ Prerequisites</h2>
 The code is built with the following tools:
 <ul>
 <li>
-g++: This compiles under versions 2.7-2.9 of g++ on FreeBSD, Solaris, and
-Cygwin.</li>
+<a href="http://gcc.gnu.org">
+g++</a>: This compiles under versions 2.7-2.9 of g++ on <a
+href="http://www.freebsd.org">FreeBSD</a>, 
+<a href="http://www.sun.com">Solaris</a>, and
+<a href="http://sources.redhat.com/cygwin">
+Cygwin</a>.</li>
 
 <li>
-gmake - other make tools may work, but I've only used gmake</li>
+<a href="http://www.gnu.org/software/make/make.html">
+gmake</a> - other make tools will probably work, but I've only used gmake</li>
 
 <li>
-noweb: The code is written using the 
-<a href="http://www.eecs.harvard.edu/~nr/noweb/">noweb</a> 
+<a href="http://www.eecs.harvard.edu/~nr/noweb/">noweb</a>:
+The code is written using the noweb
 literate programming tool.&nbsp;
 The distirbution contains up-to-date C++ source files, so if you just want
 to compile and run the programs, you can do so without noweb.&nbsp; Likewise,
@@ -75,10 +82,17 @@ Running the programs</h2>
 The programs all accept arguments in the same basic format:
 <br>&nbsp;&nbsp;&nbsp; <tt>program [options] input-file(s) output-file</tt>
 <br>Invoking the programs without arguments will cause a usage message
-to be printed which explains all of the aviailible options.
+to be printed which explains all of the available options.
+<br>The input and output files are in the
+<a href="ftp://dimacs.rutgers.edu/pub/netflow/general-info/specs.tex">
+Dimacs format</a>.  
 <br>&nbsp;
 <p>
 <h2> License Information</h2>
+The source code is subject to the following academic license.  Note this
+is <em>not</em> an 
+<a href="http://www.opensource.org/docs/definition.html">open source</a>
+license.
 <font size="3" face="Times"> 
 
    <p><b>Copyright &copy;2001. The
@@ -94,8 +108,8 @@ to be printed which explains all of the aviailible options.
       distributions. Contact The Office of Technology Licensing, UC
       Berkeley, 2150 Shattuck Avenue, Suite 510, Berkeley, CA
       94720-1620, (510) 643-7201, for commercial licensing
-      opportunities. Created by <i>Charles Anderson,
-      Department of Industrial Engineering and Operatiosn Research</i>, 
+      opportunities. Created by <i>Charles Anderson and Dorit S. Hochbaum,
+      Department of Industrial Engineering and Operations Research</i>, 
       University of California, Berkeley.</p>
       
    <p>IN NO EVENT SHALL REGENTS BE LIABLE TO ANY PARTY FOR DIRECT,
@@ -114,7 +128,7 @@ to be printed which explains all of the aviailible options.
 </font>   
 
 <hr WIDTH="100%">
-<br>Last Updated: 5  December 2001
+<br>Last Updated: 10  December 2001
 
 
 </body>
