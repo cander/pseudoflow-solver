@@ -599,11 +599,10 @@ We then push the flow out of the node and expect that every node
 we visit while pushing flow will be relabeled.  Basically, we
 are using the node's label as a marker indicating that we have
 visited the node.
-
 <<Solver methods>>=
-    void buildGreedyPushTree();
+    void buildBlockingPathTree();
 <<Solver method implementations>>=
-void PhaseSolver::buildGreedyPushTree()
+void PhaseSolver::buildBlockingPathTree()
 {
     saturateSourceSinkArcs();
 
@@ -612,13 +611,13 @@ void PhaseSolver::buildGreedyPushTree()
 	if ((node.getExcess() > 0) && 
 	    (node.getLabel() == Node::INITIAL_LABEL))
 	{	
-	    pushFlowOut(node);
+	    blockingPathPush(node);
 	}
     }
 
     setInitialNodeStatus();
 }
-@ %def buildGreedyPushTree
+@ %def bulidBlockingPathTree
 The real work in this greedy scheme is pushing the flow out of a
 node.  This recursive function finds the `best' edge to push the
 flow out on, and then we push the flow.  When we push flow out,
@@ -634,9 +633,9 @@ branch.  If we reach a point where the flow cannot be pushed
 out of a node, that node then becomes the root of a strong branch,
 and the function returns false.
 <<Solver methods>>=
-    Boolean pushFlowOut(Node& node);
+    Boolean blockingPathPush(Node& node);
 <<Solver method implementations>>=
-Boolean PhaseSolver::pushFlowOut(Node& node)
+Boolean PhaseSolver::blockingPathPush(Node& node)
 {
     Boolean foundSink = FALSE;
     node.setLabel(INIT_STRONG_LABEL);
@@ -644,7 +643,7 @@ Boolean PhaseSolver::pushFlowOut(Node& node)
 
     NodeExcess excess = node.getExcess();
     Edge* bestOutEdge = nil;
-    <<find best out edge>>
+    <<find best out-edge without split>>
 
     FlowAmount flow = excess;
     if (bestOutEdge != nil) {
@@ -665,7 +664,7 @@ Boolean PhaseSolver::pushFlowOut(Node& node)
 
     return foundSink;
 }
-@ %def pushFlowOut
+@ %def blockingPathPush
 To find the best out edge, we iterate over all of the edges looking
 for one that has at least enough capacity to handle the excess.  Also,
 the edge must refer to a node that we haven't visited yet, as indicated
@@ -673,11 +672,12 @@ by its label.  If we find multiple edges with sufficient capacity, we
 take the one with the least capacity.  Alternatively, we could take
 the first fit, but we do not expect that scanning every edge will be
 too burdensome.
-<<find best out edge>>=
+<<find best out-edge without split>>=
     node.resetIterations();
     while (node.hasMoreNeighbors()) {
 	Edge& edge = node.getCurrentNeighbor();
-	if (edge.getOtherNode(&node)->getLabel() == Node::INITIAL_LABEL) {
+	if (edge.getOtherNode(&node)->getLabel() == Node::INITIAL_LABEL)
+	{
 	    if (edge.residCapacity(node) >= excess) {
 		if (bestOutEdge == nil) {
 		    bestOutEdge = &edge;
@@ -692,7 +692,7 @@ too burdensome.
     node.resetIterations();
 @
 One would think that continuing to push flow out would be pretty simple:
-just call [[pushFlowOut(otherNode)]].  However, it's not that easy.
+just call [[blockingPathPush(otherNode)]].  However, it's not that easy.
 If we get lucky, we have pushed flow all the way to a sink-adjacent
 node.  If that node had a negative excess that exceeds the excess
 we are pushing out of [[node]], then we have have created a weak
@@ -703,7 +703,7 @@ finds roots of branches and labels all children strong or weak depending
 on the root.
 <<recursively push flow out>>=
     if (otherNode.getExcess() > 0) {	// ZERO_DEFICIT
-	foundSink = pushFlowOut(otherNode);
+	foundSink = blockingPathPush(otherNode);
     } else {
 	TRACE( trout << "found sink-adjacent node " << otherNode.getId() << endl;)
 	foundSink = TRUE;
@@ -718,7 +718,136 @@ on the root.
     }
 @
 \subsubsection{Splitting Path Initialization}
+Greedy push with any number of splits allowed.
+<<Solver methods>>=
+    void buildGreedyPathTree();
+<<Solver method implementations>>=
+void PhaseSolver::buildGreedyPathTree()
+{
+    saturateSourceSinkArcs();
+
+    for (int i = 1; i <= numNodes; i++) {
+	Node& node = nodes[i];
+	if ((node.getExcess() > 0) && 
+	    (node.getLabel() == Node::INITIAL_LABEL))
+	{	
+	    splittingPathPush(node, 10);
+	}
+    }
+
+    setInitialNodeStatus();
+}
+@ %def buildGreedyPathTree
+<<Solver methods>>=
+    Boolean splittingPathPush(Node& node, int remainingSplits);
+<<Solver method implementations>>=
+Boolean PhaseSolver::splittingPathPush(Node& node, int remainingSplits)
+{
+    Boolean foundSink = FALSE;
+    /*
+    node.setLabel(INIT_STRONG_LABEL);
+    labelCount[INIT_STRONG_LABEL]++;
+
+    NodeExcess excess = node.getExcess();
+    Edge* bestOutEdge = nil;
+    <<find best out-edge with split>>
+
+    FlowAmount flow = excess;
+    if (bestOutEdge != nil) {
+	Node& otherNode = *bestOutEdge->getOtherNode(&node);
+	TRACE( trout << "push positive excess (" << flow << " from " 
+		     << node.getId() << " to " << otherNode.getId() << endl);
+	         
+	bestOutEdge->increaseFlow(flow);
+	node.decrementExcess(flow);
+	otherNode.incrementExcess(flow);
+	otherNode.addChild(node, *bestOutEdge);
+
+	<<recursively push flow out 2>>
+    } else {
+	TRACE( trout << "can't push excess from " << node.getId() << endl; )
+	addStrongBranch(node);
+    }
+    */
+
+    return foundSink;
+}
+@ %def blockingPathPush
+<<find best out-edge with split>>=
+    node.resetIterations();
+    while (node.hasMoreNeighbors()) {
+	Edge& edge = node.getCurrentNeighbor();
+	if (edge.getOtherNode(&node)->getLabel() == Node::INITIAL_LABEL) {
+	    if (edge.residCapacity(node) <= 0) {
+		conintue;
+	    }
+	    if (bestOutEdge == nil) {
+		bestOutEdge = &edge;
+	    } 
+	    if (edge.residCapacity(node) >= excess) {
+		if (bestOutEdge->residCapacity(node) > 
+		    edge.residCapacity(node)) 
+		{
+		    bestOutEdge = &edge;
+		}
+	    } else {
+		if (edge.residCapacity(node) > 
+		    bestOutEdge->residCapacity(node))
+		{
+		    bestOutEdge = &edge;
+		}
+	    }
+	}
+	node.advanceNeighbors();
+    }
+    node.resetIterations();
+
+<<recursively push flow out 2>>=
+    if (otherNode.getExcess() > 0) {	// ZERO_DEFICIT
+	foundSink = blockingPathPush(otherNode);
+    } else {
+	TRACE( trout << "found sink-adjacent node " << otherNode.getId() << endl;)
+	foundSink = TRUE;
+	CHECK_TREE(otherNode, nil);
+    }
+
+    if (foundSink) {
+	TRACE( trout << "relabeling "  << node.getId() << " as weak " << endl;)
+	labelCount[INIT_STRONG_LABEL]--;
+	node.setLabel(INIT_WEAK_LABEL);
+	labelCount[INIT_WEAK_LABEL]++;
+    }
+@
+
+
 \subsubsection{Staturate All Arcs}
+
+<<Solver methods>>=
+    void saturateAllArcs();
+<<Solver method implementations>>=
+void PhaseSolver::saturateAllArcs()
+{
+    for (int i = 0 ; i < numEdges; i++) {
+	Edge& edge = edges[i];
+	FlowAmount excess = edge.saturate();
+
+	if (edge.getTail() == sourceNode) {
+	    Node& srcAdjNode = *edge.getHead();
+	    srcAdjNode.removeNeighbor(edge);
+	    srcAdjNode.incrementExcess(excess);
+	} else if (edge.getHead() == sinkNode) {
+	    Node& sinkAdjNode = *edge.getTail();
+	    sinkAdjNode.decrementExcess(excess);
+	    sinkAdjNode.removeNeighbor(edge);
+	} else {
+	    edge.getTail()->decrementExcess(excess);
+	    edge.getHead()->incrementExcess(excess);
+	}
+    }
+
+    setInitialNodeStatus();
+}
+@ %def saturateAllArcs
 \subsection{Input Output Functions}
 We need routines to read Dimacs problem files and write 
 Dimacs flow files.  At the moment, these are member
