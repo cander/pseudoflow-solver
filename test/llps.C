@@ -13,9 +13,11 @@ usage()
     cerr << "\t -d   dump the final disposition of each node" << endl;
     cerr << "\t -f   write the flow values for each arc" << endl;
     cerr << "\t -I   specify initialization function" << endl;
+    cerr << "\t -s   specify the number of splits for path init" << endl;
     cerr << "\t -B   specify strong bucket management" << endl;
     cerr << "\t -M   specify merger function" << endl;
     cerr << "\t -N   specify normalization method" << endl;
+    cerr << "\t -O   specify pre or post order searches" << endl;
 }
 
 int 
@@ -27,10 +29,12 @@ main(int argc, char** argv)
     void (PhaseSolver::* solverFunc)(AddBranchPtr) = &PhaseSolver::solve;
     AddBranchPtr addBranchFunc = &PhaseSolver::addBranchLifo;
     PhaseSolver* solver = new PhaseSolver();
+    int numSplits = -1;
+    Boolean postOrder = TRUE;
 
     // parse arguments
     int ch;
-    while ((ch = getopt(argc, argv, "dfI:M:N:B:")) != EOF) {
+    while ((ch = getopt(argc, argv, "dfI:s:M:N:B:O:")) != EOF) {
 	switch (ch) {
 	case 'd':
 	    dumpNodes = TRUE;
@@ -52,6 +56,10 @@ main(int argc, char** argv)
 		usage();
 		return 1;
 	    }
+	    break;
+
+	case 's':
+	    numSplits = atoi(optarg);
 	    break;
 
 	case 'M':
@@ -92,6 +100,18 @@ main(int argc, char** argv)
 	    }
 	    break;
 
+	case 'O':
+	    if (strcmp(optarg, "post") == 0) {
+		postOrder = TRUE;
+	    } else if (strcmp(optarg, "pre") == 0) {
+		postOrder = FALSE;
+	    } else {
+		cerr << "Invalid pre/post order option " << optarg << endl;
+		usage();
+		return 1;
+	    }
+	    break;
+
 	default:
 	    usage();
 	    return 1;
@@ -126,6 +146,11 @@ main(int argc, char** argv)
 	dout << *ap << " ";
     }
     dout << endl;
+
+    if (numSplits >= 0) {
+	solver->maxSplits = numSplits;
+    }
+    solver->postOrderSearch = postOrder;
 
 
     time_t beginTime = time(0);
