@@ -18,11 +18,12 @@ Boolean tracingEnabled = FALSE;
 void 
 usage()
 {
-    cerr << "Usage: pllps [-x] [-t] [-d] [-f] -V lam1,lam2,... [-I init] [-N norm] [-B branch] input-graph flow-output" << endl;
+    cerr << "Usage: pllps [-x] [-g freq] [-t] [-d] [-f] -V lam1,lam2,... [-I init] [-N norm] [-B branch] input-graph flow-output" << endl;
     cerr << "\t -d   dump the final disposition of each node" << endl;
     cerr << "\t -f   write the flow values for each arc" << endl;
     cerr << "\t -t   perform checkTree operations frequently" << endl;
     cerr << "\t -x   trace execution on console" << endl;
+    cerr << "\t -g   specify the global relabel frequency" << endl;
 
     cerr << "\t -V   specify values for lambda" << endl;
     cerr << "\t -L   inital labeling method: const, sink, deficit" << endl;
@@ -73,17 +74,21 @@ main(int argc, char** argv)
     Boolean postOrder = FALSE;
     double* lambdaValues = nil;
     int numLambdas = 0;
+    float relabelFreq = 0.0;
     LabelMethod labelMethod = LABELS_CONSTANT;
 
     // parse arguments
     int ch;
-    while ((ch = getopt(argc, argv, "dftxV:L:I:s:M:N:B:O:")) != EOF) {
+    while ((ch = getopt(argc, argv, "dfg:txV:L:I:s:M:N:B:O:")) != EOF) {
 	switch (ch) {
 	case 'd':
 	    dumpNodes = TRUE;
 	    break;
 	case 'f':
 	    writeFlow = TRUE;
+	    break;
+	case 'g':
+	    relabelFreq = atof(optarg);
 	    break;
 	case 't':
 	    checkTree = TRUE;
@@ -217,6 +222,9 @@ main(int argc, char** argv)
 
     if (numSplits >= 0) {
 	solver->maxSplits = numSplits;
+    }
+    if (relabelFreq >= 0.0) {
+	solver->relabelFrequency = relabelFreq;
     }
     solver->postOrderSearch = postOrder;
 
