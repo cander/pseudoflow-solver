@@ -499,6 +499,11 @@ Here are a couple of obvious accessor functions.
 <<Node Bucket methods>>=
     NodePtr getHead() const { return head; }
     NodePtr getTail() const { return tail; }
+@ %def getHead getTail
+Empty a bucket.
+<<Node Bucket methods>>=
+    void emptyBucket() { head = tail = nil; }
+@ %def emptyBucket
 <<Solver data>>=
     NodeBucket*	buckets;
 <<default Solver constructor>>=
@@ -2062,6 +2067,8 @@ void PhaseSolver::returnSinkAdjDeficit()
 	    if (excess < 0) {
 		edge.reduceFlow(-excess);
 		sinkAdjNode.incrementExcess(-excess);
+		TRACE( trout << "returned " << -excess << " units from "
+		             << sinkAdjNode.getId() << " to sink" << endl; );
 	    }
 	}
     }
@@ -2130,6 +2137,9 @@ this iteratively.
 	currNode = currNode->getParentNode();
     }
     currNode->decrementExcess(bottleCap);
+    TRACE( trout << "returned " << bottleCap << " units from "
+                 << srcAdjNode.getId() << " (" 
+		 << srcAdjNode.getExcess() << ") to source" << endl; );
 @
 If a node has excess/deficit, we begin search from the node among its
 neighbors trying to find a path back to the source/sink.
@@ -2251,7 +2261,7 @@ to the calling function.
     // see if we found source/sink or a cycle
     if (status) {
 	bottleCap = newBottleCap;
-	reduceFlow(node, neighbor, neighborEdge, bottleCap, seekingSource);
+	reduceFlow(node, neighborEdge, bottleCap);
 	result = status;
 	break;		// stop checking neighbors
     } 
@@ -2262,11 +2272,10 @@ code is `unidirectional' (i.e. we ignore the orientation of the arc),
 so we express everything in terms of the from/to direction we
 are moving flow along.
 <<Solver public declarations>>=
-    void reduceFlow(Node& from, Node& to, Edge& edge, 
-		    FlowAmount amt, Boolean positiveExcess);
+    void reduceFlow(Node& from, Edge& edge, 
+		    FlowAmount amt);
 <<Solver method implementations>>=
-void PhaseSolver::reduceFlow(Node& from, Node& to, Edge& edge, 
-			     FlowAmount amt, Boolean positiveExcess)
+void PhaseSolver::reduceFlow(Node& from, Edge& edge, FlowAmount amt)
 {
     edge.reduceFlow(amt);
 
@@ -2275,6 +2284,192 @@ void PhaseSolver::reduceFlow(Node& from, Node& to, Edge& edge,
     }
 }
 @ %def reduceFlow
+
+\subsection{Parametric Sensitivity Analysis}
+We support simple parametric sensitivity analysis based on the form
+used by GGT.  Given a sequence of increasing values of a parameter, 
+$\lambda$, the source-adjacent arcs have non-decreasing capacity, and
+the sink-adjacent arcs have non-increasing capacity.  
+
+We establish the initial capacity of the network by setting an
+initial value for $\lambda$ and solve the resulting network.  Then,
+we can set new values of $\lambda$, update the capacities, and re-solve
+the network in less time than starting from scratch.
+
+Setting the initial capacity is simple: just set the parameter for
+the source- and sink-adjacent arcs.
+<<Solver public declarations>>=
+    void setInitialCapacity(float lambda);
+<<Solver method implementations>>=
+void PhaseSolver::setInitialCapacity(float lambda)
+{
+    for(sourceNode->resetIterations();
+        sourceNode->hasMoreNeighbors();
+	sourceNode->advanceNeighbors())
+    {
+	Edge& edge = sourceNode->getCurrentNeighbor();
+	Node& otherNode = *edge.getDest();
+	if (&otherNode != sourceNode) {
+	    edge.increaseLambda(lambda);
+	}
+    }
+
+    for(sinkNode->resetIterations();
+        sinkNode->hasMoreNeighbors();
+	sinkNode->advanceNeighbors())
+    {
+	Edge& edge = sinkNode->getCurrentNeighbor();
+	Node& otherNode = *edge.getSource();
+	if (&otherNode != sinkNode) {
+	    edge.increaseLambda(lambda);
+	}
+    }
+}
+@ %def setInitialCapacity
+Updating the capacity to the next parameter value is a bit more involved.
+Adjusting the capacities once a flow has been established may create
+excess at the the source- or sink-adjacent node.  This excess needs to be
+pushed towards the root of the branch containing the node.  This may
+create a new strong branch if the amount of excess exceeds the previous
+deficit at a weak root.  For strong branches, it will only increase the
+excess at the root.  Because of this, we do not technically need to
+perform this since we are just making a strong branch stronger, and we
+already know that it will be in the source-set of any cut involving
+higher values of $\lambda$.  Note also that there may be splits as
+we push the new excess up the tree.  Fortunately, [[weakPush]] handles
+all aspects of this operation: pushing excess, splitting branches, and
+queuing newly strong branch roots.
+<<Solver public declarations>>=
+    void setNextCapacityParameter(float lambda);
+<<Solver method implementations>>=
+void PhaseSolver::setNextCapacityParameter(float lambda)
+{
+    <<remove strong nodes from graph>>
+    <<increase capacity on arcs out of source>>
+    <<decrease capacity on arcs into sink>>
+}
+@ %def setNextCapacityParameter
+We increase the capacity of the arcs out of the source node.  This will
+create excess at the source-adjacent node.  If this node is already
+marked as strong, we can just leave the excess because we have already removed
+the node and its branch from the graph.  Otherwise, we push the flow to
+the (weak) root which may cause the branch to become strong.
+<<increase capacity on arcs out of source>>=
+    for(sourceNode->resetIterations();
+        sourceNode->hasMoreNeighbors();
+	sourceNode->advanceNeighbors())
+    {
+	Edge& edge = sourceNode->getCurrentNeighbor();
+	Node& sourceAdjNode = *edge.getDest();
+	if (&sourceAdjNode != sourceNode) {
+	    FlowAmount delta = edge.increaseLambda(lambda);
+	    if (delta > 0) {
+		edge.increaseFlow(delta);
+		sourceAdjNode.incrementExcess(delta);
+		if (sourceAdjNode.getLabel() < numNodes) {
+		    weakPush(sourceAdjNode);
+		}
+	    }
+	}
+    }
+@ Processing the arcs into the sink is very similar, except that
+we are lowering the capacity, which results in a negative
+change in capacity.  Again, we should pay
+attention to the case where the sink-adjacent node is already strong.
+<<decrease capacity on arcs into sink>>=
+    for(sinkNode->resetIterations();
+        sinkNode->hasMoreNeighbors();
+	sinkNode->advanceNeighbors())
+    {
+	Edge& edge = sinkNode->getCurrentNeighbor();
+	Node& sinkAdjNode = *edge.getSource();
+	if (&sinkAdjNode != sinkNode) {
+	    FlowAmount delta = edge.increaseLambda(lambda);
+	    delta = -delta;		// reducing capacity!
+	    if (delta > 0) {
+		edge.decreaseFlow(delta);
+		sinkAdjNode.incrementExcess(delta);
+		if (sinkAdjNode.getLabel() < numNodes) {
+		    weakPush(sinkAdjNode);
+		}
+	    }
+	}
+    }
+@
+Should this be a separate function so that we can account for its
+time and be able to easily remove it for comparisons?
+
+First, we mark all of the active, strong nodes as being strong.
+We do this by iterating over the buckets and then proceeding down
+each branch that we find.
+<<remove strong nodes from graph>>=
+    int maxFullBucket = 0;		// could maintain highestLabel
+    for (int i = 1; i < numNodes; i++) {
+        NodePtr node = buckets[i].getHead();
+	while (node != nil) {
+	    maxFullBucket = i;
+	    labelSubtree(*node, numNodes);
+	    node = node->getNext();
+	}
+    }
+@ Next, we need to `remove' the strong nodes from the graph.
+This can effectively be done by just emptying the buckets that contain
+all of the strong branches.
+<<remove strong nodes from graph>>=
+    // remove all strong roots from bucket lists
+    for (int i = 1; i <= maxFullBucket; i++) {
+	buckets[i].emptyBucket();
+    }
+@ For maximum efficiency, we should remove all arcs from weak nodes to
+strong nodes.  It's not clear if this is mandatory.  On the one hand,
+one could argue that if we leave them, we're just scaning useless arcs
+when a weak node later becomes strong, which is inefficient, but benign.
+On the other hand, if we don't remove them, then the labels of the
+strong nodes that we have removed from the graph will not increase and
+might be mistaken for weak nodes based on their low labels.  This might
+be OK, but it would be `resurrecting' old strong nodes, which is a waste
+at the very least.
+<<remove strong nodes from graph>>=
+    /*
+    for (int i = 1; i <= numNodes; i++) {
+	Node& node = nodes[i];
+	if (node.flagIsSet(STRONG_NODE) || &node == sourceNode || &node == sinkNode) {
+	    continue;
+	}
+	for (node.resetIterations(); 
+	     node.hasMoreNeighbors();
+	     node.advanceNeighbors())
+	{
+	    Edge& edge = node.getCurrentNeighbor();
+	    Node& otherNode = *edge.getOtherNode(&node);
+	    if (otherNode.flagIsSet(STRONG_NODE)) {
+		assert(edge.residCapacity(otherNode) == 0);
+		node.removeNeighbor(edge);
+	    }
+	}
+    }
+    */
+
+<<Solver methods>>=
+    void labelSubtree(Node& node, NodeLabel l);
+<<Solver method implementations>>=
+void PhaseSolver::labelSubtree(Node& node, NodeLabel l)
+{
+    node.resetIterations();
+    while (node.hasMoreChildren()) {
+	Node& child = node.getCurrentChild();
+	labelSubtree(child, l);
+	node.advanceChildren();
+    }
+
+#ifdef  COUNT_LABELS 
+    labelCount[node.getLabel()]--;
+    labelCount[l]++;
+#endif /* COUNT_LABELS */
+    node.setLabel(l);
+}
+@ %def labelSubtree
+
 \subsection{Input Output Functions}
 We need routines to read Dimacs problem files and write 
 Dimacs flow files.  At the moment, these are member
@@ -2348,9 +2543,10 @@ Parsing the type code is a pretty simple switch statment.
 	    <<specify source/sink>>
 	    break;
 	}
-	case 'a':	// read an edge
+	case 'a':   {	// read an edge
 	    <<read edge>>
 	    break;
+	}
 	default:
 	    cerr << "Unrecognized input line: " << buffer << endl;
 	    break;
@@ -2403,17 +2599,26 @@ for the source and `t' for the sink.
     }
 @ 
 An edge is specified by a source, destination and a capacity.
+However, when we are performing parametric sensitivity analysis,
+we have an additional parameter, $b$, and the capacity is
+actually interpreted as the $a$ parameter.
 <<read edge>>=
     int source, dest, capacity;
-    numTokens =  sscanf(moreInfo, "%d %d %d", &source, &dest, &capacity);
-    if ((numTokens != 3) || (source <= 0) || (source > numNodes) ||
+    float bParam = 0;
+    numTokens =  sscanf(moreInfo, "%d %d %d %f", 
+			&source, &dest, &capacity, &bParam);
+    if ((numTokens < 3) || (source <= 0) || (source > numNodes) ||
 	(capacity < 0)   || (dest <= 0)   || (dest > numNodes)) {
 	cerr << "Invalid edge line: " << buffer << endl;
 	return FALSE;
     }
 
     if (nextEdge < numEdges) {
-	edges[nextEdge].init(nodes[source], nodes[dest], capacity);
+	if (numTokens == 3) {
+	    edges[nextEdge].init(nodes[source], nodes[dest], capacity);
+	} else {
+	    edges[nextEdge].init(nodes[source], nodes[dest], capacity, bParam);
+	}
 	nextEdge++;
 	nodeDegrees[source]++;
 	nodeDegrees[dest]++;

@@ -182,10 +182,30 @@ void Edge::init(Node& src, Node& dst, FlowAmount cap)
     source = &src;
     dest = &dst;
     flow = 0;
-    capacity = cap;
     isForward = TRUE;
+    capacity = cap;
 }
 @ %def init
+We also need to initialize parameteric arcs where the capacity
+is defined by two parameters, $a$ and $b$.
+<<Edge methods>>=
+#ifdef PARAM_SENSE
+    void init(Node& src, Node& dst, FlowAmount aParam, float bParam);
+#endif PARAM_SENSE
+<<Edge method implementations>>=
+#ifdef PARAM_SENSE
+void Edge::init(Node& src, Node& dst, FlowAmount _aParam, float _bParam)
+{
+    source = &src;
+    dest = &dst;
+    flow = 0;
+    isForward = TRUE;
+    capacity = 0;
+    aParam = _aParam;
+    bParam = _bParam;
+}
+#endif PARAM_SENSE
+@ 
 At the begining of the algorithm, we need to saturate the
 source- and sink-adjacent edges.
 <<Edge methods>>=
@@ -194,6 +214,56 @@ source- and sink-adjacent edges.
 FlowAmount Edge::saturate()
 { assert(flow == 0); flow = capacity; return flow; }
 @ %def saturate
+
+\subsection{Parametric Flow}
+To perform parametric sesnitivity analysis, we will specify the capacity
+in terms of a simple, linear function: $c = a + b \lambda$.  
+Because our implementation assumes integer flows and capacities,
+we will round the capacity function to the nearest integer.
+This function
+will apply to the arcs our of the source and into the sink.  The
+source-adjacent arcs will increase in capacity as a function of $\lambda$
+and the sink-adjacent arcs will decrease.
+
+Therefore, we will store the two parameters, $a$ and 
+$b$, on the edge, and $\lambda$ will be provided externally.
+To simply things, we will conditional compilation (ifdef) rather
+than a sub-class.
+<<Edge data>>=
+#ifdef PARAM_SENSE
+    FlowAmount aParam;
+    float      bParam;
+#endif PARAM_SENSE
+@
+Given a new value for $\lambda$, we compute the new capacity and return
+the change in capacity.  In order to accomodate mining data, we take
+the absolute value of the capacity because sink-adjacent arcs will start
+with a large negative value of $a$ (the cost to extract a block), and 
+the term $b \lambda$ (the value of ore) will increase.  By taking the
+absolute value, we get a positive capacity (required for max-flow) and
+it will decrease as $\lambda$ increases (required for the GGT
+formulation).  Note that once $b \lambda$ exceeds $a$, the capacity will
+increase even though it is still adjacent to the sink.  This doesn't
+seem to be a problem.
+<<Edge methods>>=
+    FlowAmount increaseLambda(float newLabmda);
+<<Edge method implementations>>=
+FlowAmount Edge::increaseLambda(float newLambda)
+{
+    FlowAmount oldCapacity = capacity;
+#ifdef PARAM_SENSE
+    capacity = (FlowAmount)rintf(fabs(aParam + bParam * newLambda));
+    // assume we always want the arc saturated
+    //flow = capacity;
+#endif PARAM_SENSE
+
+    return capacity - oldCapacity;
+}
+@ %def increaseLambda
+<<Edge header include files>>=
+#include <math.h>
+@
+\subsection{Miscellaneous Functions}
 We need a way to print the contents of an edge to an output stream,
 mostly for debugging.
 <<C++ overhead>>=
