@@ -12,16 +12,19 @@ STANDARD_FLAGS = -DCOUNT_LABELS -DTERM_LABELS -DLIFO_BUCKETS  \
 
 CFLAGS	= -Wall $(OPTIONS) $(INLINE) $(SITE_CFLAGS) $(STANDARD_FLAGS) $(EXTRA_FLAGS)
 
+LDFLAGS = -L. -lpsa $(LDPROF) $(LOCAL_LIBS)
 
 # after installation, make doc.dvi for literate version
 
 # the order of these files is the order they show up in the latex doc
-WEBFILES = PhaseSolver.nw Node.nw Edge.nw EdgeList.nw Timer.nw
+WEBFILES = PhaseSolver.nw Node.nw Edge.nw EdgeList.nw Drivers.nw 
 
 SRCS     = Node.h Node.C Edge.h Edge.C EdgeList.C EdgeList.h \
-	   PhaseSolver.C PhaseSolver.h Timer.C Timer.h buildinfo.c
+	   PhaseSolver.C PhaseSolver.h buildinfo.c \
+	   llps.C pllps.C
 
-OBJECTS  = Node.o Edge.o EdgeList.o PhaseSolver.o Timer.o buildinfo.o
+LIBOBJS  = Node.o Edge.o EdgeList.o PhaseSolver.o buildinfo.o 
+OBJECTS  = $(LIBOBJS) llps.o pllps.o
 
 LIBNAME	 = libpsa.a
 DOCFILES = doc.dvi doc.ps doc.aux doc.log allcode.tex doc.tex doc.toc
@@ -43,13 +46,24 @@ CPIF=>
 
 
 
-
 all: $(LIBNAME) 
 
 
-$(LIBNAME): $(OBJECTS)
-	ar rv $(LIBNAME) $(OBJECTS)
+$(LIBNAME): $(LIBOBJS)
+	ar rv $(LIBNAME) $(LIBOBJS)
 	ranlib $(LIBNAME)
+
+llps: $(LIBNAME) llps.o
+	$(CXX) -o llps llps.o $(LDFLAGS)
+
+pllps: $(LIBNAME) pllps.o
+	$(CXX) -o pllps pllps.o $(LDFLAGS)
+
+# Extract the driver programs from Drivers.nw "by hand"
+llps.C: Drivers.nw
+	$(NOTANGLE) -L -Rllps Drivers.nw > llps.C
+pllps.C: Drivers.nw
+	$(NOTANGLE) -L -Rpllps Drivers.nw > pllps.C
 
 
 clean: 
@@ -59,7 +73,7 @@ clobber:	clean
 		rm -f $(SRCS)
 
 
-buildinfo.c: . $(OBJECTS)
+buildinfo.c: . $(LIBOBJS)
 	echo 'char* buildFlags = "'$(CFLAGS)'";' > buildinfo.c
 	echo 'char* buildDate = "'`date`'";' >> buildinfo.c
 
