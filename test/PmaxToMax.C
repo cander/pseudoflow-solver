@@ -52,6 +52,17 @@ main(int argc, char** argv)
     const char* instanceName = argv[optind];
     const char* outputName = argv[optind + 1];
 
+    PhaseSolver* solver = new PhaseSolver();
+    Boolean readOK =  solver->readDimacsInstance(instanceName);
+
+    if (readOK == FALSE) {
+	cout << "CANNOT READ INSTANCE" << endl;
+	exit(-1);
+	return 1;
+    }
+
+    cout << "read problem instance OK" << endl;
+
     ofstream dout(outputName, ios::out);
     if (dout == nil) {
 	cerr << "Unable to open output file: " << outputName << endl;
@@ -70,16 +81,6 @@ main(int argc, char** argv)
 	dout << *ap << " ";
     }
     dout << endl;
-
-    PhaseSolver* solver = new PhaseSolver();
-    Boolean readOK =  solver->readDimacsInstance(instanceName);
-
-    if (readOK == FALSE) {
-	dout << "c  CANNOT READ INSTANCE" << endl;
-	return 1;
-    }
-
-    cout << "read problem instance OK" << endl;
 
     solver->setInitialCapacity(lambdaVal);
     solver->writeInstance(dout);
