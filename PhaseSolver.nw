@@ -1526,15 +1526,42 @@ in an optimal solution.
 <<Solver method implementations>>=
 void PhaseSolver::saturateSourceSinkArcs()
 {
-    for (int i = 0 ; i < numEdges; i++) {
-	Edge& edge = edges[i];
+    for(sourceNode->resetIterations();
+        sourceNode->hasMoreNeighbors();
+	sourceNode->advanceNeighbors())
+    {
+	Edge& edge = sourceNode->getCurrentNeighbor();
+	<<saturate or remove current edge>>
+    }
+
+    for(sinkNode->resetIterations();
+        sinkNode->hasMoreNeighbors();
+	sinkNode->advanceNeighbors())
+    {
+	Edge& edge = sinkNode->getCurrentNeighbor();
+	<<saturate or remove current edge>>
+    }
+}
+@ %def saturateSourceSinkArcs
+If the arc goes straight from the source to the sink, we just saturated it
+and don't bother doing anything else.
+<<saturate or remove current edge>>=
 	if ((edge.getSource() == sourceNode) &&
 	    (edge.getDest() == sinkNode))
 	{
 	    edge.saturate();
 	    continue;
 	}
-
+@ When we saturate an edge, we remove it from the list
+of arcs for the source- or sink-adjacent node.  This will prevent flow 
+from going back to
+either the source or the sink without having to special-case these
+arcs at run-time.  However, before performing flow recovery (in 
+[[convertToFlow]]) we will need to add them back to return excess/deficit
+to the source/sink.  Also, we want to remove the arcs going into
+the source or out of the sink because these will never be used
+in an optimal solution, but these do not have to be added back.
+<<saturate or remove current edge>>=
 	if (edge.getSource() == sourceNode) {
 	    FlowAmount excess = edge.saturate();
 	    Node& srcAdjNode = *edge.getDest();
@@ -1553,9 +1580,7 @@ void PhaseSolver::saturateSourceSinkArcs()
 	    // edge out of sink never used
 	    edge.getDest()->removeNeighbor(edge);
 	}
-    }
-}
-@ %def saturateSourceSinkArcs
+@
 Again, since determining the initial status of nodes is apt
 to be a common subroutine of many initialization procedures,
 we have it as a separate method.  We iterate over
