@@ -270,8 +270,9 @@ labeled node that we split off.
 void PhaseSolver::weakPush(Node& src)
 {
     NodePtr currNode = &src;
-    while (currNode->getParentNode() != nil) {
-	NodePtr parent = currNode->getParentNode();
+    NodePtr parent = currNode->getParentNode();
+
+    while (parent != nil) {
 	Boolean performedSplit = currNode->pushToParent();
 	<<check for zero-capcity split>>
 
@@ -284,7 +285,9 @@ void PhaseSolver::weakPush(Node& src)
 	    } 
 	}
 	currNode = parent;
+	parent = currNode->getParentNode();
     }
+
     CHECK_TREE(*currNode, nil);
 
     if (currNode->getExcess() > 0 ||
