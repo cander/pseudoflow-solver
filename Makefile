@@ -64,6 +64,8 @@ llps.C: Drivers.nw
 pllps.C: Drivers.nw
 	$(NOTANGLE) -L -Rpllps Drivers.nw > pllps.C
 
+PmaxToMax: PmaxToMax.o $(LIBNAME)
+	$(CXX) -o PmaxToMax PmaxToMax.o $(LDFLAGS)
 
 clean: 
 	rm -f $(DOCFILES) $(OBJECTS) buildinfo.c
