@@ -125,8 +125,14 @@ main(int argc, char** argv)
 	(solver->*solverFunc)(addBranchFunc);
 	solveTimer.stop();
 
+	Timer convertTimer;
+	convertTimer.start();
+	solver->convertToFlow();
+	convertTimer.stop();
+
 	cout << "time to establish tree: " << treeTimer << endl;
 	cout << "done solving: " << solveTimer << endl;
+	cout << "time to convert flow: " << convertTimer << endl;
 
 	ofstream dout(outputName, ios::out);
 	if (dout == nil) {
@@ -145,6 +151,7 @@ main(int argc, char** argv)
 	dout << "c  buildDate: " << buildDate << endl;
 	dout << "c  timeToInitialize: " << initTimer << endl;
 	dout << "c  timeToSolve: " << solveTimer << endl;
+	dout << "c  timeToFlow: " << convertTimer << endl;
 	dout << "c  argv: ";
 	for (char** ap = argv; *ap != nil; ap++) {
 	    dout << *ap << " ";
