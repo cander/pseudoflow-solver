@@ -3191,7 +3191,7 @@ void PhaseSolver::setInitialCapacity(double lambda)
 	Edge& edge = sinkNode->getCurrentNeighbor();
 	Node& otherNode = *edge.getSource();
 	if (&otherNode != sinkNode) {
-	     Boolean negative = edge.setInitialCapacity(lambda);
+	    Boolean negative = edge.setInitialCapacity(lambda);
 	    if (negative == FALSE) {
 		sinkNode->removeNeighbor(edge);
 		edge.reInit(*sourceNode, otherNode);
@@ -3422,6 +3422,15 @@ at the third character in the line.
 	char type;
 	sscanf(buffer, "%c", &type);
 	<<parse line>>
+    }
+@ We should check that the number of edges that are supposed to be in the
+file is how many we actually read.  This can be a problem if we run out of
+disk space when generating an instance.
+<<read instance and initialize edges>>=
+    if (nextEdge < numEdges) {
+	cerr << "Not enough edges - expected " << numEdges << " found " 
+	     << nextEdge << endl;
+	return FALSE;
     }
 @ 
 Parsing the type code is a pretty simple switch statment.
