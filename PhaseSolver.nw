@@ -63,6 +63,7 @@ void PhaseSolver::solve(AddBranchPtr addFunc)
 	<<check for global relabel>>
 	strongBranch = getLowestBranch();
     }
+checkMergers();		// TTT
 }
 @ %def solve
 For each possible value for a node's label, if we track the number of 
@@ -77,8 +78,20 @@ execution.
 	if ((labelCount[strongLabel - 1] == 0) && 
 	    (strongLabel > INIT_WEAK_LABEL))
 	{
+checkBranches();
+
+/*
+-- put back strong branch
+-- global relabel
+-- get strong branch
+-- if labelCount still equal zero, break
+*/
+if (strongLabel > 100) {
 	    cout << "Early termination" << endl;
 	    break;
+} else {
+    cout << "Ignoring early termination at label " << strongLabel << endl;
+}
 	}
     #endif /* TERM_LABELS */
 @ Periodically, we may wish to perform global relabeling operations.
@@ -86,7 +99,7 @@ This is rather expensive, so we don't want to do it very often.
 <<check for global relabel>>=
     if (numRelabels > relabelCounter) {
 	globalRelabel();
-	relabelCounter = numRelabels + numNodes ;
+	relabelCounter = numRelabels + numNodes;
     }
 <<Solver data>>=
     int relabelCounter;
@@ -202,25 +215,36 @@ be a mess, but we could overcome it.  Actually, it seems pretty
 easy: during phase $\ell$, both the node and it's parent have
 label $\ell$, so when we check the label of the neighbor, we
 won't try to merge.}
+
+{\em Note deux: According to the algorithm, the only merger arcs
+during phase $l$ should be to nodes with label $l-1$.  However, when we
+introduced global relabeling and short path initialization, we found
+that for some unknown reason there were weak nodes with label $l-2$ that
+we were not merging to.  Therefore, for the moment at least, the test
+has been changed from $label = l-1$ to $label < l$. }
 <<look for merger among neighbors>>=
     while (node.hasMoreNeighbors()) {
 	Edge& neighborEdge = node.getCurrentNeighbor();
 	Node& neighbor = *neighborEdge.getOtherNode(&node);
-	// if ((neighbor.getLabel() == (label - 1)) &&
-	if ((neighbor.getLabel() <= (label - 1)) &&
+	if ((neighbor.getLabel() < label) &&
 	    (neighborEdge.residCapacity(node) > 0))
 	{
-if (neighbor.getLabel() < (label - 1)) {
-    cout << "Super weak merger from " << node.getId() << " (l="
-		     << node.getLabel() << ") to " << neighbor.getId()
-		     << " (l=" << neighbor.getLabel() << ")" << endl;
-}
+	    TRACE(if (neighbor.getLabel() < (label - 1)) 
+		   trout << "Super weak merger from " << node.getId() 
+			 << " (l=" << node.getLabel() << ") to " 
+			 << neighbor.getId() 
+			 << " (l=" << neighbor.getLabel() << ")" << endl; );
 	    merge(node, neighbor, neighborEdge);
 	    return TRUE;
 	}
 	node.advanceNeighbors();
     }
 @
+This is some debug/assertion code to verify that we haven't missed
+any available merger opportunites.  The algorithm claims that the
+only weak nodes we can merge with should have label $l-1$.  When
+we use distance labels, we've found that sometimes we miss a
+merger with a node labeled $l-2$.  This checks for that.
 <<verify no merger available>>=
 #ifdef DEBUG
     ElIterator it = node.getNeighbors();
@@ -228,7 +252,7 @@ if (neighbor.getLabel() < (label - 1)) {
 	Node& neighbor = *edge->getOtherNode(&node);
 	FlowAmount residCap = edge->residCapacity(node);
 	if (residCap > 0 && (neighbor.isStrong(FALSE)) == FALSE) {
-	    if (neighbor.getLabel() < (node.getLabel() - 1)) {
+	    if (neighbor.getLabel() < node.getLabel()) {
 		cout << "Missed merger from " << node.getId() << " (l="
 		     << node.getLabel() << ") to " << neighbor.getId()
 		     << " (l=" << neighbor.getLabel() << ")" << endl;
@@ -579,8 +603,8 @@ void NodeBucket::removeNode(Node& node)
 		if (tail == curr) {
 		    tail = prev;
 		}
-		curr->setNextNil();
 	    }
+	    curr->setNextNil();
 	    return;
 	}
 	prev = curr;
@@ -2093,10 +2117,8 @@ void PhaseSolver::buildSpTree()
 	<<build weak branch>>
     }
 
-    setSpInitialNodeStatus();		//-- gotta bug here
-    //setInitialNodeStatus();
-cout << "Checking branches" << endl;
-checkBranches();
+    setSpInitialNodeStatus();	
+    IFDEBUG( checkBranches(); );
 }
 @ %def buildSpTree
 First, we need to set all the labels to infinity.
@@ -2205,12 +2227,9 @@ void PhaseSolver::setSpInitialNodeStatus()
 	Node& node = nodes[i];
 	if (node.getExcess() > 0) {
 	    <<set label to minimum of weak neighbors>>
-node.setLabel(INIT_STRONG_LABEL);
+//node.setLabel(INIT_STRONG_LABEL);
 	    addStrongBranch(node);
 	} 
-else {
-    // node.setLabel(INIT_WEAK_LABEL);
-}
 	labelCount[node.getLabel()]++;
 	node.resetIterations();
     }
@@ -2244,6 +2263,7 @@ label for strong nodes.
     if (minLabel < MAXINT) {
 	assert(minLabel < numNodes);
 	node.setLabel(minLabel + 1);
+node.setLabel(minLabel);
     } else {
 	node.setLabel(INIT_STRONG_LABEL);
     }
@@ -2262,14 +2282,11 @@ eliminate it from further processing.
 void PhaseSolver::globalRelabel()
 {
     STATS(numGlobalRelabels++);
-cout << "global relabel start" << endl;
     TRACE( trout << "Begin global relabeling.  Lowest label: " << lowestLabel << endl; );
     <<set initial distance labels to infinity>>
     <<search backwards from the sink labeling nodes>>
     <<relabel/remove each branch>>
-cout << "Checking branches" << endl;
-checkBranches();
-cout << "global relabel end" << endl;
+    IFDEBUG( checkBranches(); )
 }
 @ %def globalRelabel
 We start by labeling all nodes with an initial distance of [[MAXINT]].
@@ -2294,7 +2311,8 @@ merge and become weak.  Do we care??}
 	Node& edgeSource = *edge.getSource();
 	Node& edgeDest = *edge.getDest();
 	if ((&edgeSource != sourceNode) && (&edgeDest == sinkNode)) {
-	    if (edgeSource.getExcess() <= 0) {	// XXX check if weak?
+	    // XXX is this an error source for sat-all?
+	    if (edgeSource.getExcess() <= 0) {	// XXX check if weak? 
 		edgeSource.distance = 1;
 		putNodeQ(edgeSource);
 	    }
@@ -2327,34 +2345,18 @@ label is less than or equal to our current one.  So, we are done with it.
 	    putNodeQ(neighbor);
 	}
     }
-
-@ Computing the distance labels is pretty straightforward.  This code
-should be combined with the same code that does this during initialization.
-<<Solver methods>>=
-    void computeDistanceLabels(Node& node);
-<<Solver method implementations>>=
-void PhaseSolver::computeDistanceLabels(Node& node)
-{
-    NodeLabel dist = node.distance + 1;
-    ElIterator it = node.getNeighbors();
-    for (EdgePtr edge = it.getNext(); edge != nil; edge=it.getNext()) {
-	Node& neighbor = *edge->getOtherNode(&node);
-	FlowAmount residCap = edge->residCapacity(neighbor);
-
-	if ((residCap > 0) && (neighbor.distance > dist)) {
-	    neighbor.distance = dist;
-	    computeDistanceLabels(neighbor);
-	}
-    }
-}
-@ %def computeDistanceLabels
-
+@
 After we've labeled the nodes, we want to scan all of the branches.  
 For strong branches,
 we would like to remove them or (in the future) update their labels to
-reflect their distances.  For weak branches, we will just update the labels 
-For this we must iterate over all nodes in the graph looking for roots
-because we don't track weak branches.  
+reflect their distances.  For weak branches, we will just update the labels.
+However, with saturate-all initialization, we have to beware of nodes
+that (temporarily) have infinite distance labels due to the `wacky' state
+that saturating all arcs creates (e.g. we cannot even perform flow recovery
+immediately after saturating all arcs).
+
+To do this relabeling, we must iterate over all nodes in the graph looking 
+for roots because we don't track weak branches.  
 <<relabel/remove each branch>>=
     for (int i = 1; i <= numNodes; i++) {
 	Node& node = nodes[i];
@@ -2366,7 +2368,9 @@ because we don't track weak branches.
 	    if (isStrongNode(node)) {
 		<<relabel/remove strong branch>>
 	    } else {
-		relabelWeakBranch(node);
+		if (distance < numNodes) {
+		    relabelWeakBranch(node);
+		}
 	    }
 	}
     }
@@ -2376,18 +2380,29 @@ We set the labels of all nodes in the branches to [[numNodes]] to
 prevent any strong branches from trying to merge with this branch.
 In the future, maybe we can relabel the strong branch???
 <<relabel/remove strong branch>>=
-    if ((distance == MAXINT) && (node.getLabel() < numNodes)) {
-	buckets[node.getLabel()].removeNode(node);
+    NodeLabel oldLabel = node.getLabel();
+    if ((distance == MAXINT) && (oldLabel < numNodes)) {
+	buckets[oldLabel].removeNode(node);
 	setBranchLabel(node, numNodes);
     }
+@ Here is a first attempt at relabeling strong nodes:
+<<relabel/remove strong branch>>=
+    else if (oldLabel < numNodes) {
+	NodeLabel newLabel = relabelWeakBranch(node);
+	if (newLabel != oldLabel) {
+	    assert(newLabel > oldLabel);
+	    buckets[oldLabel].removeNode(node);
+	    addStrongBranch(node);
+	}
+    }
+@ This is a straightfoward, recursive DFS to set the labels of all nodes
+of a branch to a specified value.
 <<Solver methods>>=
     void setBranchLabel(Node& node, NodeLabel l);
 <<Solver method implementations>>=
 void PhaseSolver::setBranchLabel(Node& node, NodeLabel l)
 {
-    // XXX move this method to Node?
-cout << "relabeling " << node.getId() << " from " 
-		     << node.getLabel() << " to " << l << endl;
+    // XXX move this method to Node?  - can't: want to track node label counts
     TRACE( trout << "relabeling " << node.getId() << " from " 
 			 << node.getLabel() << " to " << l << endl; );
     setLabel(node, l);
@@ -2402,7 +2417,7 @@ monotonicity in the tree.  In a weak branch, monotonicity doesn't
 matter so long as the branch stays weak, but if it later becomes strong,
 we must have monotonicity for the rest of the implementation to work.
 Ideally, we'd like to increase our label to match our distance.  However,
-out new label cannot be higher than any of our children.  So, first
+our new label cannot be higher than any of our children.  So, first
 we recursively set the labels of our children and in the process compute
 the minimum label among them.  Then we update our own label.
 <<Solver methods>>=
@@ -2430,14 +2445,14 @@ NodeLabel PhaseSolver::relabelWeakBranch(Node& node)
 	if (newLabel > node.getLabel()) {
 	    TRACE( trout << "relabeling " << node.getId() << " from " 
 			 << node.getLabel() << " to " << minLabel << endl; );
-	    setLabel(node, minLabel);
+	    setLabel(node, newLabel);
 	}
     }
 
     return node.getLabel();
 }
 @ %def relabelWeakBranch
-
+Here is a queue of nodes.  This ought to be moved to Node.nw.
 <<Solver data>>=
     NodePtr* nodeQ;
     NodePtr* qRead;
@@ -2667,7 +2682,8 @@ void PhaseSolver::pushRootExcess(Node& node)
 		assert(node.getExcess() <= 0);
 	    }
 	} else {
-	    assert("There must be a path to the source/sink" == nil);
+	    //assert("There must be a path to the source/sink" == nil);
+	    cout << "There must be a path to the source/sink " << node.getId() << endl;
 	    return;
 	}
 
@@ -3248,6 +3264,7 @@ void PhaseSolver::dumpNodes(ostream& out)
     out << endl << "c" << endl;
 }
 @ %def dumpNodes
+\subsection{Debug Code}
 Here is a debug method to find all branches (weak and strong) and
 check them.
 <<Solver methods>>=
@@ -3269,6 +3286,36 @@ void PhaseSolver::checkBranches()
     }
 }
 @ %def checkBranches
+Here is a method to check for mergers between strong nodes and weak nodes.
+After we complete solving, there should be no mergers available.
+<<Solver methods>>=
+    void checkMergers();
+<<Solver method implementations>>=
+void PhaseSolver::checkMergers()
+{
+    cout << "Checking for missed mergers." << endl;
+    for (int i = 0; i < numNodes; i++) {
+	Node& node = nodes[i];
+	if ((&node == sourceNode) || (&node == sinkNode)) {
+	    continue;
+	}
+	if (node.isStrong(FALSE)) {
+	    ElIterator it = node.getNeighbors();
+	    for (EdgePtr edge = it.getNext(); edge != nil; edge=it.getNext()) {
+		Node& neighbor = *edge->getOtherNode(&node);
+		if ((neighbor.isStrong(FALSE) == FALSE) && 
+		    (edge->residCapacity(node) > 0))
+		{
+		    cout << "Found merger from " 
+		         << node.getId() << " (" << node.getLabel() << ")  to "
+		         << neighbor.getId() << " (" << neighbor.getLabel() << ")"
+			 << endl;
+		}
+	    }
+	}
+    }
+}
+@ %def checkMergers
 \subsection{File Boiler Plate}
 <<C++ overhead>>=
     PhaseSolver();
