@@ -60,7 +60,7 @@ INLINE NodePtr Edge::getOtherNode(const NodePtr node) const
     capacity = flow = 0;
 @ %def capacity flow
 Although the capacity of an edge is fixed during the duration of
-the algorithm, the flow varies.  We always speak of {\em increasing}
+the algorithm, the flow varies.  We usually speak of {\em increasing}
 the flow, but this is done with respect to the current orientation
 of the edge, so it may in fact be reducing the amount of flow if
 the current orientation is backwards.
@@ -79,6 +79,17 @@ INLINE void Edge::increaseFlow(FlowAmount amt)
     }
 }
 @ %def increaseFlow
+For simplex mergers, we need to be able to decrease the flow on an
+arc.  This is pretty trivial using [[increaseFlow]].
+<<Edge methods>>=
+public:
+    void decreaseFlow(FlowAmount amt);
+<<Edge inline implementations>>=
+INLINE void Edge::decreaseFlow(FlowAmount amt)
+{ 
+    increaseFlow(-amt);
+}
+@ %def decreaseFlow
 We need to to define the residual
 capacity with respect to the current orientation and from one node
 to the other.
