@@ -32,6 +32,6 @@ profile:
 	$(MAKE) OPTIONS="-pg" LDPROF="-pg" 
 
 optimize:
-	rm llps.o
+	rm -f llps.o
 	$(MAKE) 
 
