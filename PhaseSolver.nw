@@ -1,5 +1,30 @@
 \section{Phase-based Solver}
-@
+The solver manages the entire problem instance.  Initially
+this includes the nodes and edges.  These are stored as contiguous
+arrays (as opposed to allocating each one with [[new]])
+to make memory management fast and simple.  These arrays are allocated
+when the problem instance is read.
+<<Solver data>>=
+    Node*	nodes;
+    Edge*	edges;
+<<default Solver constructor>>=
+    nodes = edges = nil;
+@ %def nodes edges
+Just for safety checking, we should also keep track of the
+number of elements in each of these arrays.
+<<Solver data>>=
+    int		numNodes;
+    int		numEdges;
+<<default Solver constructor>>=
+    numNodes = numEdges = nil;
+@ %def numNodes numEdges
+We also need to know the source and sink nodes in the graph.
+<<Solver data>>=
+    NodePtr 	sourceNode;
+    NodePtr 	sinkNode;
+<<default Solver constructor>>=
+    sourceNode = sinkNode = nil;
+@ %def sourceNode sinkNode
 Push excess from the former strong root, $r_s$ to the strong node, $s$,
 and one step beyond to the weak node, $w$.
 When this finishes, the remaining excess will be stored on
@@ -60,9 +85,172 @@ void PhaseSolver::addStrongBranch(NodePtr root)
 <<Solver inline implementations>>=
 <<header include files>>=
 <<C++ overhead>>=
-<<Solver data>>=
 @
-\subsubsection{File Boiler Plate}
+\subsection{Input Output Functions}
+We need routines to read Dimacs problem files and write 
+Dimacs flow files.  At the moment, these are member
+functions on the solver.  An alternative design would
+be to put them in a separate class or file to allow us
+to support multiple input file formats for the same 
+solver class.
+
+Our function to read a problem instance is given a file name and
+return true if it sucessfully read the problem instance from the
+specified file.
+<<Solver methods>>=
+    Boolean readDimacsInstance(const char* filename);
+@
+Our code will be divided into two steps. In the first
+steps we will determine the basic dimensions of the problem, initialize
+the edges, and compute the degree of each node.  Once we know the degree
+of the nodes, we can initialize them and add all of their neighbors.
+
+The code below uses C standard I/O ([[stdio]]) because I'm too lazy
+to figure out how to use C++ I/O streams.  
+<<Solver method implementations>>=
+Boolean PhaseSolver::readDimacsInstance(const char* filename)
+{
+    FILE* fp = fopen(filename, "r");
+    if (fp != NULL) {
+	<<local variables for reading>>
+	<<read instance and initialize edges>>
+	<<initialize nodes>>
+    } else {
+	perror("Unable to read problem instance");
+	return FALSE;
+    }
+    return TRUE;
+}
+<<implementation header files>>=
+#include <stdio.h>
+@ %def readDimacsInstance
+Reading the problem instance is farily straightforward.  We
+read lines until the end of file.  Each line
+in the file is identified by a `type character' that specifies what
+type of line we are reading.  The type then determines how much more
+information is on the line.  The additional information will begin 
+at the third character in the line.
+<<read instance and initialize edges>>=
+    while (!feof(fp)) {
+	char buffer[500];
+	if (fgets(buffer, 500, fp) == NULL) {
+	    break;
+	}
+	char* moreInfo = &buffer[2];
+	char type;
+	sscanf(buffer, "%c", &type);
+	<<parse line>>
+    }
+@ 
+Parsing the type code is a pretty simple switch statment.
+<<parse line>>=
+    switch (type) {
+	case 'c':	// comment
+	    break;
+	case 'p':	// problem dimensions
+	    <<allocate problem instance>>
+	    break;
+	case 'n':   {	// specify source or sink
+	    <<specify source/sink>>
+	    break;
+	}
+	case 'a':	// read an edge
+	    <<read edge>>
+	    break;
+	default:
+	    cerr << "Unrecognized input line: " << buffer << endl;
+	    break;
+    }
+@
+The problem instance has a problem type string, number of nodes,
+and number of instances.  In addition to allocating the array
+of nodes, we also allocate and zero an array of integers that we
+will use to count the degree of each node as we read each edge.
+Note that node id's begin at one rather than zero, so we need to
+allocate an extra node (node zero), that never really gets used.
+<<allocate problem instance>>=
+    char typeBuffer[20];
+    numTokens = sscanf(moreInfo, "%s %d %d", typeBuffer, &numNodes, &numEdges);
+    if ((numTokens != 3) || (numNodes <= 0) || (numEdges <= 0)) {
+	cerr << "Invalid problem instance line: " << buffer << endl;
+	return FALSE;
+    }
+    nodes = new Node[numNodes + 1];
+    edges = new Edge[numEdges];
+    nodeDegrees = new int[numNodes + 1];
+    for (int i = 0; i <= numNodes; i++) {
+	nodeDegrees[i] = 0;
+    }
+<<local variables for reading>>=
+    int numTokens = 0;
+    int* nodeDegrees = nil;
+@ 
+The source and sink in the graph are simply specified by a node number and `s'
+for the source and `t' for the sink.
+<<specify source/sink>>=
+    char sourceSinkFlag;
+    int nodeNumber;
+    numTokens =  sscanf(moreInfo, "%d %c", &nodeNumber, &sourceSinkFlag);
+    if ((numTokens != 2) || (nodeNumber <= 0) || (nodeNumber > numNodes)) {
+	cerr << "Invalid source/sink line: " << buffer << endl;
+	return FALSE;
+    }
+
+    if (sourceSinkFlag == 's') {
+	sourceNode = &nodes[nodeNumber];
+    } else if (sourceSinkFlag == 't') {
+	sinkNode = &nodes[nodeNumber];
+    } else {
+	cerr << "Invalid source/sink line: " << buffer << endl;
+	return FALSE;
+    }
+@ 
+An edge is specified by a source, destination and a capacity.
+<<read edge>>=
+    int source, dest, capacity;
+    numTokens =  sscanf(moreInfo, "%d %d %d", &source, &dest, &capacity);
+    if ((numTokens != 3) || (source <= 0) || (source > numNodes) ||
+	(capacity < 0)   || (dest <= 0)   || (dest > numNodes)) {
+	cerr << "Invalid edge line: " << buffer << endl;
+	return FALSE;
+    }
+
+    if (nextEdge < numEdges) {
+	edges[nextEdge].init(nodes[source], nodes[dest], capacity);
+	nextEdge++;
+	nodeDegrees[source]++;
+	nodeDegrees[dest]++;
+    } else {
+	cerr << "Too many edges - graph should only contain " << numEdges << endl;
+	return FALSE;
+    }
+<<local variables for reading>>=
+    int nextEdge = 0;
+@
+To initialize the nodes, we call their [[init]] method to allocate
+space for neighbors based on the degree of each node that we observered
+while reading edges.  We can trivially assign each node it's id number.
+<<initialize nodes>>=
+    for (int i = 1; i <= numNodes; i++) {
+	nodes[i].init(i, nodeDegrees[i]);
+    }
+@
+Once the nodes are initialized, we can easily iterate over the list of 
+edges and add each endpoint to the other's list of neighbors.  Note,
+we only scan the edges that we actually read (based on [[nextEdge]])
+rather than the number we could have seen (specified by [[numEdges]]).
+<<initialize nodes>>=
+    for (int i = 0; i < nextEdge; i++) {
+	edges[i].getHead()->addNeighbor(edges[i]);
+	edges[i].getTail()->addNeighbor(edges[i]);
+    }
+@
+Finally, let's remember to free up the memory we allocated to count
+node degrees.
+<<initialize nodes>>=
+    delete[] nodeDegrees;
+@
+\subsection{File Boiler Plate}
 We start with the boiler-plate implementation file. 
 <<*>>=
 #include "PhaseSolver.h"
@@ -71,6 +259,7 @@ We start with the boiler-plate implementation file.
 #include <iostream.h>
 #include <iomanip.h>
 #include <assert.h>
+<<implementation header files>>
 
 <<Solver method implementations>>
 @
