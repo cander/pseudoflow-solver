@@ -207,15 +207,30 @@ void PhaseSolver::strongPush(Node& src, Node& dest)
     while (currNode != &dest) {
 	NodePtr parent = currNode->getParentNode();
 	Boolean performedSplit = currNode->pushToParent();
+	<<check for zero-capcity split>>
+
 	if (performedSplit) {
-	    if (currNode->getExcess() > 0) {	// ZERO_DEFICIT
+	    if (currNode->getExcess() > 0 ||
+	        currNode->getExcess() == 0 && zeroDeficitIsStrong)
+	    {	
 		addStrongBranch(*currNode);
-	    } // else - just a split, zero-deficit node?
+	    } 
 	}
 	currNode = parent;
     }
 }
 @ %def strongPush
+We allow special handling if an edge has zero residual capacity.
+It could be split or left alone.
+<<check for zero-capcity split>>=
+    if (performedSplit == FALSE && 
+	currNode->getParentCapacity() == 0 &&
+	splitOnZeroCapacity) 
+    {
+	currNode->split();
+	performedSplit = TRUE;
+    }
+@
 Pushing on the weak side is similar in that it uses [[pushToParent]]
 to push all of the flow, but it differs in that we push all the way
 to the root of the branch, and we want to keep track of the lowest
@@ -229,21 +244,54 @@ void PhaseSolver::weakPush(Node& src)
     while (currNode->getParentNode() != nil) {
 	NodePtr parent = currNode->getParentNode();
 	Boolean performedSplit = currNode->pushToParent();
+	<<check for zero-capcity split>>
+
 	if (performedSplit) {
 	    CHECK_TREE(*currNode, nil);
-	    if (currNode->getExcess() > 0) {	// ZERO_DEFICT
+	    if (currNode->getExcess() > 0 ||
+	        currNode->getExcess() == 0 && zeroDeficitIsStrong)
+	    {	
 		addStrongBranch(*currNode);
-	    } // else - just a split, zero-deficit node?
+	    } 
 	}
 	currNode = parent;
     }
     CHECK_TREE(*currNode, nil);
 
-    if (currNode->getExcess() > 0) {	// ZERO_DEFICT
+    if (currNode->getExcess() > 0 ||
+	currNode->getExcess() == 0 && zeroDeficitIsStrong)
+    {
 	addStrongBranch(*currNode);
     }
 }
 @ %def weakPush
+In the code above, we used some flags to control some of the
+behavior of the code while it's running.  We'll declare this
+public so that they can be easily inspected and tweaked.
+The first flag controls what happens if we push excess along an
+arc that matches the residual capacity.  We could choose to
+either split it or leave it alone until the next push sends
+flow along the arc, which will cause an immediate split.
+<<public Solver data>>=
+    Boolean splitOnZeroCapacity;
+@
+The second flag controls how we regard zero-deficit nodes/branches during
+the execution of the algorithm (they are always weak when start the
+algorith).  If we treat a zero-deficit node as weak, when the algorithm
+finishes, the strong nodes will be a minimal source set.  However, this
+can lead to creating weak branch with root nodes whose label is greater
+than one.  This in turn makes it very difficult (impossible?) to bound 
+the maximum label that weak node can take (if weak roots have label one,
+no node can have a label greater than $n$).  If we treat zero-deficit
+nodes as strong, weak roots will always have label one, we will never
+create any additional zero-deficit nodes/branches, but we have no easy
+way to find a minimal source set.
+<<public Solver data>>=
+    Boolean zeroDeficitIsStrong;
+<<default Solver constructor>>=
+    splitOnZeroCapacity = FALSE;
+    zeroDeficitIsStrong = FALSE;
+@ %def splitOnZeroCapacity zeroDeficitIsStrong
 \subsection{Managing Strong Branches}
 We manage strong branches using an array of linked lists of Nodes.
 We refer to each such element in the array as a `bucket'.
@@ -278,7 +326,9 @@ lowest labeled branch.
 void PhaseSolver::addStrongBranch(Node& root)
 {
     NodeLabel label = root.getLabel();
-    assert((root.getExcess() > 0) && (label > 0));	// ZERO_DEFICT
+    assert(zeroDeficitIsStrong ? (root.getExcess() >= 0) :
+				 (root.getExcess() > 0));
+    CHECK_TREE(root, nil);
     // put in correct bucket
     if (buckets[label] == nil) {
 	root.setNextNil();
@@ -553,7 +603,7 @@ class ostream;
 void PhaseSolver::dumpNodes(ostream& out)
 {
     out << "c" << endl
-        << "c Node id  excess  strong/weak" << endl;
+        << "c Node  id   excess  parent strong/weak" << endl;
 
     for (int i = 1; i <= numNodes; i++) {
 	Node& node = nodes[i];
@@ -563,8 +613,15 @@ void PhaseSolver::dumpNodes(ostream& out)
 	} else if (&node == sinkNode) {
 	    out << "sink";
 	} else {
-	     out << node.getExcess() << setw(8)
-		  << (node.isStrong() ? "strong" : "weak");
+	     out << node.getExcess() << setw(8);
+	     if (node.isRootNode()) {
+		out << "NULL";
+	     } else {
+		out << node.getParentNode()->getId();
+	     }
+
+	     out << setw(8) <<
+		 (node.isStrong(FALSE) ? "strong" : "weak");
 	 }
 	 out << endl;
     }
@@ -609,6 +666,7 @@ class PhaseSolver
 public:
     <<Solver methods>>
     <<C++ overhead>>
+    <<public Solver data>>
 private:
     <<Solver data>>
 };
