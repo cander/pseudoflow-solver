@@ -1,8 +1,7 @@
 
 include site.mk
 
-OPTIONS	= -g -DDEBUG
-#OPTIONS	= -g -DDEBUG -DTRACING
+OPTIONS	= -g -DDEBUG -DTRACING
 
 INLINE_ALL  = -DINLINE_NODE -DINLINE_EDGELIST -DINLINE_EDGE -DINLINE_SOLVER
 INLINE  = $(INLINE_ALL)
@@ -54,13 +53,13 @@ $(LIBNAME): $(OBJECTS)
 
 
 clean: 
-	rm -f $(DOCFILES) $(OBJECTS)
+	rm -f $(DOCFILES) $(OBJECTS) buildinfo.c
 
 clobber:	clean
 		rm -f $(SRCS)
 
 
-buildinfo.c: .
+buildinfo.c: . $(OBJECTS)
 	echo 'char* buildFlags = "'$(CFLAGS)'";' > buildinfo.c
 	echo 'char* buildDate = "'`date`'";' >> buildinfo.c
 
@@ -68,7 +67,7 @@ buildinfo.c: .
 # special build version for various purposes
 profile:
 	rm -f $(OBJECTS)
-	$(MAKE) OPTIONS="-pg -O" INLINE="$(PROFILE_INLINE)" all
+	$(MAKE) OPTIONS="-pg -g" INLINE="$(PROFILE_INLINE)" all
 
 trace:
 	rm -f $(OBJECTS)
