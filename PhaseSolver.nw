@@ -43,6 +43,12 @@ void PhaseSolver::solve()
 		trout << "Phase " << currentPhase << endl;
 	    }
 	)
+#ifdef TERM_LABELS
+	if (labelCount[strongBranch->getLabel() - 1] == 0) {
+	    cout << "Early termination" << endl;
+	    break;
+	}
+#endif /* TERM_LABELS */
 	processBranch(*strongBranch);
 	strongBranch = getLowestBranch();
     }
@@ -284,6 +290,9 @@ void PhaseSolver::weakPush(Node& src)
     if (currNode->getExcess() > 0 ||
 	currNode->getExcess() == 0 && zeroDeficitIsStrong)
     {
+	if (currNode->getLabel() == 1) {
+	    currNode->incrementLabel();
+	}
 	addStrongBranch(*currNode);
     }
 }
@@ -441,7 +450,6 @@ NodePtr PhaseSolver::getLowestBranch()
 }
 @ %def getLowestBranch
 <<Solver inline implementations>>=
-<<header include files>>=
 <<C++ overhead>>=
     PhaseSolver();
 <<Solver method implementations>>=
@@ -636,16 +644,10 @@ void PhaseSolver::writeDimacsFlow(ostream& dout)
     <<write header>>
     dout << "s " << 0 << endl;
     <<dump arcs>>
-    dumpNodes(dout);
 }
 @ %def writeDimacsFlow
 <<write header>>=
-    extern char* buildFlags;
-    extern char* buildDate;
-    dout << "c" << endl;
-    dout << "c  buildFlags: " << buildFlags << endl;
-    dout << "c  buildDate: " << buildDate << endl;
-    dout << "c  instance: " << instanceFilename << endl;
+    // dout << "c  instance: " << instanceFilename << endl;
     dout << "c  numNodes: " << numNodes << endl;
     dout << "c  numArcs: "  << numEdges << endl;
     dout << "c" << endl;
@@ -662,7 +664,7 @@ in the graph.
 <<Solver methods>>=
     void dumpNodes(ostream& out);
 <<header include files>>=
-class ostream;
+    class ostream;
 <<Solver method implementations>>=
 void PhaseSolver::dumpNodes(ostream& out)
 {
@@ -695,7 +697,6 @@ void PhaseSolver::dumpNodes(ostream& out)
 We start with the boiler-plate implementation file. 
 <<*>>=
 #include "PhaseSolver.h"
-#include "Node.h"
 #include "debug.h"
 #include <iostream.h>
 #include <fstream.h>
@@ -723,6 +724,7 @@ data, and inline functions.  Again, we have more boiler-plate.
 #ifndef SOLVER_H
 #define SOLVER_H
 #include "types.h"
+#include "Node.h"
 <<header include files>>
 
 class PhaseSolver 
