@@ -71,7 +71,6 @@ no choice.
 <<EdgeList method implementations>>=
 void EdgeList::compactList()
 {
-cout << "EdgeList::compactList" << endl;
     int hole;
     <<search for first hole>>
     int nonHole;
@@ -116,6 +115,9 @@ Either way, we don't have to copy anything around and we are done.
 	    currentIndex = size = 0;
 	} else {
 	    size = hole;
+	    if (currentIndex > hole) {
+		 currentIndex = hole;
+	    }
 	}
 	return;
     }
