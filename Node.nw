@@ -55,6 +55,7 @@ void Node::addNeighbor(Edge& edge)
 During initialization, we remove arc from/to source- and sink-
 adjacent nodes so that we don't scan them and try to push flow back along
 these arcs.
+{\em We should/could compact the list after removing the arc.}
 <<Node methods>>=
     void removeNeighbor(Edge& edge);
 <<Node method implementations>>=
@@ -80,6 +81,7 @@ The parent edge is [[nil]] if the node is a root.
     EdgePtr	getParentEdge() const;
     NodePtr	getParentNode();
     Boolean	isRootNode() const;
+    FlowAmount  getParentCapacity() const;
 <<Node inline implementations>>=
 INLINE EdgePtr Node::getParentEdge() const
 { return parentEdge; }
@@ -87,6 +89,8 @@ INLINE NodePtr Node::getParentNode()
 { return (parentEdge != nil) ? parentEdge->getOtherNode(this) : nil; }
 INLINE Boolean Node::isRootNode() const
 { return (parentEdge == nil) ? TRUE : FALSE; }
+INLINE FlowAmount Node::getParentCapacity() const
+{ return parentEdge->residCapacity(); }
 @ %def getParentEdge getParentNode isRootNode
 Adding a child is a more involved process than adding a neighbor
 because we have to update the parent edge.  We begin by adding
@@ -173,6 +177,7 @@ void Node::split()
 		 << getParentNode()->id << " with excess " 
 		 << excess << endl;)
     getParentNode()->children.removeElement(parentEdge);
+    parentEdge->toggleOrientation();
     parentEdge = nil;
 }
 @ %def split
@@ -274,11 +279,14 @@ the pseudo-root.
 Of course, then we need methods to manipulate the excess.
 <<Node methods>>=
     NodeExcess getExcess() const;
+    void incrementExcess(NodeExcess delta);
     void decrementExcess(NodeExcess delta);
     void setExcess(NodeExcess newExcess);
 <<Node inline implementations>>=
 INLINE NodeExcess Node::getExcess() const
 { return excess; }
+INLINE void Node::incrementExcess(NodeExcess delta)
+{ excess += delta; }
 INLINE void Node::decrementExcess(NodeExcess delta)
 { excess -= delta; }
 INLINE void Node::setExcess(NodeExcess newExcess)
@@ -289,8 +297,9 @@ from the node towards the root.  We do this on a node-by-node basis
 - i.e. we just push the flow to our parent and let him worry about it.
 If we cannot push all of our excess to our parent, we return true,
 otherwise we return false.  Note that if the amount of excess
-exactly matches the residual capacity, we still consider it if we
-can insufficient capacity.
+exactly matches the residual capacity, we will not split, but the
+calling function can choose to split us if he sees no remaining 
+residual capacity.
 <<Node methods>>=
     Boolean pushToParent();
 <<Node method implementations>>=
@@ -300,9 +309,9 @@ Boolean Node::pushToParent()
     Edge& edge = *parentEdge;
     Node& parent = *(edge.getOtherNode(this));	// use getHead instead?
     assert(parent.excess <= 0);
-    assert(edge.residCapacity() > 0);
+    assert(edge.residCapacity() >= 0);
 
-    if (edge.residCapacity() > excess) {	// ZERO_DEFICT
+    if (edge.residCapacity() >= excess) {
 	<<push without splitting>>
 	return FALSE;
     } else {
@@ -328,7 +337,6 @@ the current node when done.
     parent.excess += flow;
     excess -= flow;
     edge.increaseFlow(flow);
-    edge.toggleOrientation();
     split();
 @
 We need a default constructor because we will be creating an
@@ -491,13 +499,22 @@ NodePtr Node::getRoot()
 With that function, we can easily (if not efficiently) determine if
 a node is strong or weak.
 <<debugging functions>>=
-    Boolean isStrong();
+    Boolean isStrong(Boolean zeroExcessIsStrong);
 <<Node method implementations>>=
-Boolean Node::isStrong()
-{ return (getRoot()->excess > 0) ? TRUE : FALSE; }
+Boolean Node::isStrong(Boolean zeroExcessIsStrong)
+{ 
+    FlowAmount excess = getRoot()->excess > 0;
+    if (excess > 0) {
+	return TRUE;
+    } else if (excess == 0 && zeroExcessIsStrong) {
+	return TRUE;
+    } else {
+	return FALSE;
+    }
+}
 @ %def isStrong
 For tracing, printing the excess of the root is useful.
-<<debugging functions>>=
+<<debugging functions>>= 
     NodeExcess getRootExcess();
 <<Node method implementations>>=
 NodeExcess Node::getRootExcess()
