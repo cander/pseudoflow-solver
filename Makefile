@@ -19,13 +19,14 @@ LDFLAGS = -L. -lpsa $(LDPROF) $(LOCAL_LIBS)
 WEBFILES = PhaseSolver.nw Node.nw Edge.nw EdgeList.nw Drivers.nw 
 
 SRCS     = Node.h Node.C Edge.h Edge.C EdgeList.C EdgeList.h \
-	   PhaseSolver.C PhaseSolver.h buildinfo.c \
-	   llps.C pllps.C
+	   PhaseSolver.C PhaseSolver.h \
+	   llps.C pllps.C gpps.C
 
 LIBOBJS  = Node.o Edge.o EdgeList.o PhaseSolver.o buildinfo.o 
-OBJECTS  = $(LIBOBJS) llps.o pllps.o
+OBJECTS  = $(LIBOBJS) llps.o pllps.o gpps.o
 
 LIBNAME	 = libpsa.a
+PROGRAMS = llps pllps gpps
 DOCFILES = doc.dvi doc.ps doc.aux doc.log allcode.tex doc.tex doc.toc
 
 NOTANGLE=notangle
@@ -45,7 +46,7 @@ CPIF=>
 
 
 
-all: $(LIBNAME) llps pllps
+all: $(LIBNAME) $(PROGRAMS)
 
 
 $(LIBNAME): $(LIBOBJS)
@@ -58,17 +59,22 @@ llps: $(LIBNAME) llps.o
 pllps: $(LIBNAME) pllps.o
 	$(CXX) -o pllps pllps.o $(LDFLAGS)
 
+gpps: $(LIBNAME) gpps.o
+	$(CXX) -o gpps gpps.o $(LDFLAGS)
+
 # Extract the driver programs from Drivers.nw "by hand"
 llps.C: Drivers.nw
 	$(NOTANGLE) -L -Rllps Drivers.nw > llps.C
 pllps.C: Drivers.nw
 	$(NOTANGLE) -L -Rpllps Drivers.nw > pllps.C
+gpps.C: Drivers.nw
+	$(NOTANGLE) -L -Rgpps Drivers.nw > gpps.C
 
 PmaxToMax: PmaxToMax.o $(LIBNAME)
 	$(CXX) -o PmaxToMax PmaxToMax.o $(LDFLAGS)
 
 clean: 
-	rm -f $(DOCFILES) $(OBJECTS) buildinfo.c
+	rm -f $(DOCFILES) $(OBJECTS) $(PROGRAMS) buildinfo.c
 
 clobber:	clean
 		rm -f $(SRCS)
