@@ -3164,9 +3164,9 @@ the network in less time than starting from scratch.
 Setting the initial capacity is simple: just set the parameter for
 the source- and sink-adjacent arcs.
 <<Solver public declarations>>=
-    void setInitialCapacity(float lambda);
+    void setInitialCapacity(double lambda);
 <<Solver method implementations>>=
-void PhaseSolver::setInitialCapacity(float lambda)
+void PhaseSolver::setInitialCapacity(double lambda)
 {
     for(sourceNode->resetIterations();
         sourceNode->hasMoreNeighbors();
@@ -3205,9 +3205,9 @@ we push the new excess up the tree.  Fortunately, [[weakPush]] handles
 all aspects of this operation: pushing excess, splitting branches, and
 queuing newly strong branch roots.
 <<Solver public declarations>>=
-    void setNextCapacityParameter(float lambda);
+    void setNextCapacityParameter(double lambda);
 <<Solver method implementations>>=
-void PhaseSolver::setNextCapacityParameter(float lambda)
+void PhaseSolver::setNextCapacityParameter(double lambda)
 {
     <<remove strong nodes from graph>>
     <<increase capacity on arcs out of source>>
@@ -3467,17 +3467,22 @@ we have an additional parameter, $b$, and the capacity is
 actually interpreted as the $a$ parameter.
 <<read edge>>=
     int source, dest, capacity;
-    float bParam = 0;
-    numTokens =  sscanf(moreInfo, "%d %d %d %f", 
+    double bParam = 0;
+    numTokens =  sscanf(moreInfo, "%d %d %d %lf", 
 			&source, &dest, &capacity, &bParam);
     if ((numTokens < 3) || (source <= 0) || (source > numNodes) ||
-	(capacity < 0)   || (dest <= 0)   || (dest > numNodes)) {
+	(dest <= 0) || (dest > numNodes)) {
 	cerr << "Invalid edge line: " << buffer << endl;
 	return FALSE;
     }
 
     if (nextEdge < numEdges) {
 	if (numTokens == 3) {
+	    // non-parametric must have non-negative capacity
+	    if (capacity < 0) {
+		cerr << "Invalid edge line: " << buffer << endl;
+		return FALSE;
+	    }
 	    edges[nextEdge].init(nodes[source], nodes[dest], capacity);
 	} else {
 	    edges[nextEdge].init(nodes[source], nodes[dest], capacity, bParam);
@@ -3581,6 +3586,26 @@ scan the sink arcs and compare the amounts.
 	flowAmt += edge.getFlow();
     }
     dout << "s " << flowAmt << endl;
+@
+We also use the methods of this class for data file conversion when
+converting from parametric files to non-parameteric files.  We used to
+do this with a separate program written in Python, but the floating point
+semantics are slightly different.  Therefore, we can read a parameteric
+instance and set a value for lambda, then dump it out.  This should have
+identical values for the arc capacities as when we use the parametric solver.
+<<Solver methods>>=
+    void writeInstance(ostream& dout);
+<<Solver method implementations>>=
+void PhaseSolver::writeInstance(ostream& dout)
+{
+    dout << "p  max  " << numNodes << "  " << numEdges << endl;
+    dout << "n  " << sourceNode->getId() << " s" << endl;
+    dout << "n  " << sinkNode->getId() << " t" << endl;
+    for (int i = 0; i < numEdges; i++) {
+	edges[i].writeArcInstance(dout) << endl;
+    }
+}
+@ %def writeDimacsFlow
 @
 Here is a method to print the final disposition of all of the nodes
 in the graph.  This should be called before converting the pseudoflow
