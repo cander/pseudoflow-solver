@@ -234,7 +234,20 @@ during phase $l$ should be to nodes with label $l-1$.  However, when we
 introduced global relabeling and short path initialization, we found
 that for some unknown reason there were weak nodes with label $l-2$ that
 we were not merging to.  Therefore, for the moment at least, the test
-has been changed from $label = l-1$ to $label < l$. }
+has been changed from $label = l-1$ to $label < l$.  The existance
+of these super-weak mergers actually contradicts the lowest label rule
+because given two strong nodes with label $l$, one might have a neighbor
+with label $l-1$ and the other with $l-2$.  We according to `lowest
+label' we should process the latter first, but we might not.  Maybe this
+is a bug that I should find to better understand global labeling?
+
+Note trios: We added code to check the nieghbor's distance label and
+merged to it only if it was less than ours, but this provided only
+minimal/negligible difference.  The code still must check the node labels
+to tell the difference between strong and weak nodes (weak nodes still
+have label less than ours).  With a genrmf graph, I only saw a differnce of
+two in the number of mergers.
+}
 <<look for merger among neighbors>>=
     if (node.distance <= label) {
 	while (node.hasMoreNeighbors()) {
@@ -255,20 +268,12 @@ has been changed from $label = l-1$ to $label < l$. }
 	}
     }
 @
-At the very least, we need to increment the label of the node by one.  However,
-we'd like to increase it by more, up to its distance.
+If we scan a node and do not find a merger, we want to increase the
+label of the node.  At the very least, we need to increment the label of 
+the node by one.  However, if we are using distance labeling,
+we may be able to do more.
 <<increase node label>>=
-    // maybe move to a separate chunk with #ifdefs
-    if (node.distance > 0) {
-	NodeLabel newLabel = min(node.distance, node.minChildLabel);
-	newLabel = max(newLabel, label + 1);
-	setLabel(node, newLabel);
-	STATS(numRelabels++);
-	STATS(if ((newLabel - label) > 1) numLabelSkips++; );
-    } else {
-	incrementLabel(node);
-	STATS(numRelabels++);
-    }
+    increaseNodeLabel(node);
 @
 This is some debug/assertion code to verify that we haven't missed
 any available merger opportunites.  The algorithm claims that the
@@ -801,7 +806,7 @@ non-empty bucket.
 INLINE NodePtr PhaseSolver::getLowestBucket()
 {
     NodePtr result = nil;
-    while (lowestLabel < numNodes) {
+    while (lowestLabel <= highestLabel) {
 	result = buckets[lowestLabel].removeHead();
 	if (result != nil) {
 	    result->setNextNil();
@@ -2500,13 +2505,13 @@ NodeLabel PhaseSolver::relabelBranch(Node& node)
 	}
     }
 
-    // add code here to recompute minChildLabel
-
     if (minLabel == MAXINT) {
 	// node has no children
 	minLabel = max(node.distance, node.getLabel());
     }
     assert(minLabel >= node.getLabel());
+    node.minChildLabel = minLabel;
+
     if (node.distance > node.getLabel()) {
 	NodeLabel newLabel = min(minLabel, node.distance);
 	assert(newLabel >= node.getLabel());
@@ -2521,6 +2526,32 @@ NodeLabel PhaseSolver::relabelBranch(Node& node)
     return node.getLabel();
 }
 @ %def relabelBranch
+After scanning a node's neighbors and children, if we found no merger
+we need to increase the label by at least one.
+If we are using distance labels, it is possible to increase the node label
+by more, perhaps up to the distance label.  However, we cannot increase it
+higher than any of our children because that would violate monotonicity.
+<<Solver methods>>=
+    void increaseNodeLabel(Node& node);
+<<Solver inline implementations>>= 
+INLINE void PhaseSolver::increaseNodeLabel(Node& node)
+{
+    if (node.distance > 0) {
+	NodeLabel oldLabel = node.getLabel();
+	NodeLabel newLabel = min(node.distance, node.minChildLabel);
+	newLabel = max(newLabel, oldLabel + 1);
+	setLabel(node, newLabel);
+	STATS(numRelabels++);
+	STATS(if ((newLabel - oldLabel) > 1) numLabelSkips++; );
+	if (node.distance < newLabel) {
+	    node.distance = newLabel;
+	}
+    } else {
+	incrementLabel(node);
+	STATS(numRelabels++);
+    }
+}
+@ %def increaseNodeLabel
 \subsubsection{Queue of Nodes}
 Here is a queue of nodes.  This ought to be moved to Node.nw.
 <<Solver data>>=
@@ -2989,7 +3020,7 @@ We do this by iterating over the buckets and then proceeding down
 each branch that we find.
 <<remove strong nodes from graph>>=
     int maxFullBucket = 0;
-    for (int i = 1; i < highestLabel; i++) {
+    for (int i = 1; i <= highestLabel; i++) {
         NodePtr node = buckets[i].getHead();
 	while (node != nil) {
 	    maxFullBucket = i;
