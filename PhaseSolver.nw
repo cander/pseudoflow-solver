@@ -59,6 +59,7 @@ void PhaseSolver::solve(AddBranchPtr addFunc)
 	)
 	<<terminate early based on counting labels>>
 	Boolean performedMerger = processBranch(*strongBranch);
+	STATS(performedMerger ? 0 : numEmptyBranchScans++ );
 	checkForRelabel();
 	strongBranch = getLowestBranch();
     }
@@ -148,7 +149,6 @@ Boolean PhaseSolver::processBranch(Node& root)
     } else {
 	performedMerger = processSubtree(root);
 	if (!performedMerger) {
-	    numEmptyBranchScans++;
 	    addStrongBranch(root);	// XXX maybe this should be in solve
 	}
     }
@@ -3175,7 +3175,12 @@ void PhaseSolver::setInitialCapacity(double lambda)
 	Edge& edge = sourceNode->getCurrentNeighbor();
 	Node& otherNode = *edge.getDest();
 	if (&otherNode != sourceNode) {
-	    edge.increaseLambda(lambda);
+	    Boolean negative = edge.setInitialCapacity(lambda);
+	    if (negative) {
+		sourceNode->removeNeighbor(edge);
+		edge.reInit(otherNode, *sinkNode);
+		sinkNode->addNeighbor(edge);
+	    }
 	}
     }
 
@@ -3186,7 +3191,12 @@ void PhaseSolver::setInitialCapacity(double lambda)
 	Edge& edge = sinkNode->getCurrentNeighbor();
 	Node& otherNode = *edge.getSource();
 	if (&otherNode != sinkNode) {
-	    edge.increaseLambda(lambda);
+	     Boolean negative = edge.setInitialCapacity(lambda);
+	    if (negative == FALSE) {
+		sinkNode->removeNeighbor(edge);
+		edge.reInit(*sourceNode, otherNode);
+		sourceNode->addNeighbor(edge);
+	    }
 	}
     }
 }
@@ -3205,10 +3215,11 @@ we push the new excess up the tree.  Fortunately, [[weakPush]] handles
 all aspects of this operation: pushing excess, splitting branches, and
 queuing newly strong branch roots.
 <<Solver public declarations>>=
-    void setNextCapacityParameter(double lambda);
+    void setNextCapacityParameter(double oldLambda, double newLambda);
 <<Solver method implementations>>=
-void PhaseSolver::setNextCapacityParameter(double lambda)
+void PhaseSolver::setNextCapacityParameter(double oldLambda, double newLambda)
 {
+    assert(newLambda >= oldLambda);
     <<remove strong nodes from graph>>
     <<increase capacity on arcs out of source>>
     <<decrease capacity on arcs into sink>>
@@ -3227,7 +3238,9 @@ the (weak) root which may cause the branch to become strong.
 	Edge& edge = sourceNode->getCurrentNeighbor();
 	Node& sourceAdjNode = *edge.getDest();
 	if (&sourceAdjNode != sourceNode) {
-	    FlowAmount delta = edge.increaseLambda(lambda);
+	    FlowAmount delta = 0;
+	    Boolean crossed = edge.increaseLambda(oldLambda, newLambda, delta);
+	    assert(crossed == FALSE);
 	    if (delta > 0) {
 		edge.increaseFlow(delta);
 		sourceAdjNode.incrementExcess(delta);
@@ -3237,10 +3250,11 @@ the (weak) root which may cause the branch to become strong.
 	    }
 	}
     }
-@ Processing the arcs into the sink is very similar, except that
-we are lowering the capacity, which results in a negative
-change in capacity.  Again, we should pay
-attention to the case where the sink-adjacent node is already strong.
+@ 
+Processing the arcs into the sink is more complicated because the capacity
+is actually negative and increasing towards zero (but we take the absolute
+value so it looks like it's decreasing).  If it crosses zero, we must move
+the arc to be adjacent to the source.  change in capacity.  
 <<decrease capacity on arcs into sink>>=
     for(sinkNode->resetIterations();
         sinkNode->hasMoreNeighbors();
@@ -3249,10 +3263,14 @@ attention to the case where the sink-adjacent node is already strong.
 	Edge& edge = sinkNode->getCurrentNeighbor();
 	Node& sinkAdjNode = *edge.getSource();
 	if (&sinkAdjNode != sinkNode) {
-	    FlowAmount delta = edge.increaseLambda(lambda);
-	    delta = -delta;		// reducing capacity!
+	    FlowAmount delta = 0;
+	    Boolean crossed = edge.increaseLambda(oldLambda, newLambda, delta);
 	    if (delta > 0) {
-		edge.decreaseFlow(delta);
+		if (crossed) {
+		    <<move arc to source>>
+		} else {
+		    edge.decreaseFlow(delta);
+		}
 		sinkAdjNode.incrementExcess(delta);
 		if (sinkAdjNode.getLabel() < numNodes) {
 		    weakPush(sinkAdjNode);
@@ -3260,6 +3278,20 @@ attention to the case where the sink-adjacent node is already strong.
 	    }
 	}
     }
+@ When the capacity of a sink-adjacent arc crosses zero, we need to move
+it from the sink to the source.  Note that we do not need to update the
+neighbor list of the node because we already removed sink as a neighbor
+during initialization ([saturateSourceSinkArcs]).
+<<move arc to source>>=
+    sinkNode->removeNeighbor(edge);
+    edge.reInit(*sourceNode, sinkAdjNode);
+    sourceNode->addNeighbor(edge);
+@ Next we need to set the flow amount on the arc.  This is the new,
+positive capacity, which is less than delta - i.e. saturate the arc.
+However, we increase the excess of the node by the full delta amount (see
+above).
+<<move arc to source>>=
+    edge.saturate();
 @
 Should this be a separate function so that we can account for its
 time and be able to easily remove it for comparisons?
@@ -3351,7 +3383,7 @@ the edges, and compute the degree of each node.  Once we know the degree
 of the nodes, we can initialize them and add all of their neighbors.
 
 The code below uses C standard I/O ([[stdio]]) because I'm too lazy
-to figure out how to use C++ I/O streams.  
+to figure out how to use C++ I/O streams for input.  
 <<Solver method implementations>>=
 Boolean PhaseSolver::readDimacsInstance(const char* filename)
 {
@@ -3500,9 +3532,21 @@ actually interpreted as the $a$ parameter.
 To initialize the nodes, we call their [[init]] method to allocate
 space for neighbors based on the degree of each node that we observered
 while reading edges.  We can trivially assign each node it's id number.
+We special-case the source and sink nodes to give them larger adjacency
+lists to support parameteric analysis where nodes can move between the
+source and sink depending on the value of lambda.
 <<initialize nodes>>=
+    // until the nodes are initialized, the nodes pointed at by sourceNode
+    // and sinkNode don't have ids, so we have to compute the ids by
+    // pointer arithmetic
+    int sourceId = sourceNode - nodes;
+    int sinkId = sinkNode - nodes;
     for (int i = 1; i <= numNodes; i++) {
+	if ((i == sourceId) || (i == sinkId)) {
+	nodes[i].init(i, nodeDegrees[sourceId] + nodeDegrees[sinkId]);
+    } else {
 	nodes[i].init(i, nodeDegrees[i]);
+    }
     }
 @
 Once the nodes are initialized, we can easily iterate over the list of 
