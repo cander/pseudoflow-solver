@@ -129,7 +129,7 @@ twoup.ps: doc.ps
 	cat doc.ps | psnup -2 -pletter > twoup.ps
 
 cvsignore:
-	echo "*.doc *.dvi *.ps *.log *.toc *.tex *.aux" > .cvsignore
+	echo "*.doc *.dvi *.ps *.log *.toc *.tex *.aux *.swp" > .cvsignore
 	echo $(SRCS) .cvsignore >> .cvsignore
 
 # dependencies - these should be done automatically
@@ -139,3 +139,6 @@ EdgeList.o: EdgeList.C EdgeList.h types.h debug.h
 Edge.o: Edge.C Edge.h Node.h types.h debug.h
 PhaseSolver.o: PhaseSolver.h PhaseSolver.C Node.h types.h debug.h Edge.h EdgeList.h
 Timer.o: Timer.h
+llps.o: PhaseSolver.h
+pllps.o: PhaseSolver.h
+gpps.o: PhaseSolver.h
