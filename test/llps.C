@@ -6,6 +6,8 @@
 #include <time.h>
 #include <stdlib.h>
 
+extern char* buildFlags;
+
 void 
 usage()
 {
@@ -18,6 +20,7 @@ usage()
     cerr << "\t -M   merger function: pseudo, simplex" << endl;
     cerr << "\t -N   normalization method: immed, delayed" << endl;
     cerr << "\t -O   search order: pre, post" << endl;
+    cerr << "buildFlags: " << buildFlags << endl;
 }
 
 int 
@@ -137,7 +140,6 @@ main(int argc, char** argv)
 	return 1;
     }
 
-    extern char* buildFlags;
     extern char* buildDate;
     dout << "c" << endl;
     dout << "c  instance: " << instanceName << endl;
