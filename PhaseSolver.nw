@@ -182,8 +182,7 @@ Boolean PhaseSolver::processSubtree(Node& node)
 
     // no merger
     <<verify no merger available>>
-    incrementLabel(node);
-    STATS(numRelabels++);
+    <<increase node label>>
     TRACE(trout << "node " << node.getId() << " relabled to "
 		<< node.getLabel() << endl;);
     return FALSE;
@@ -234,21 +233,44 @@ that for some unknown reason there were weak nodes with label $l-2$ that
 we were not merging to.  Therefore, for the moment at least, the test
 has been changed from $label = l-1$ to $label < l$. }
 <<look for merger among neighbors>>=
-    while (node.hasMoreNeighbors()) {
-	Edge& neighborEdge = node.getCurrentNeighbor();
-	Node& neighbor = *neighborEdge.getOtherNode(&node);
-	if ((neighbor.getLabel() < label) &&
-	    (neighborEdge.residCapacity(node) > 0))
-	{
-	    TRACE(if (neighbor.getLabel() < (label - 1)) 
-		   trout << "Super weak merger from " << node.getId() 
-			 << " (l=" << node.getLabel() << ") to " 
-			 << neighbor.getId() 
-			 << " (l=" << neighbor.getLabel() << ")" << endl; );
-	    merge(node, neighbor, neighborEdge);
-	    return TRUE;
+    if (node.distance <= label) {
+	while (node.hasMoreNeighbors()) {
+	    Edge& neighborEdge = node.getCurrentNeighbor();
+	    Node& neighbor = *neighborEdge.getOtherNode(&node);
+	    if ((neighbor.getLabel() < label) &&
+		(neighborEdge.residCapacity(node) > 0))
+	    {
+		TRACE(if (neighbor.getLabel() < (label - 1)) 
+		       trout << "Super weak merger from " << node.getId() 
+			     << " (l=" << node.getLabel() << ") to " 
+			     << neighbor.getId() 
+			     << " (l=" << neighbor.getLabel() << ")" << endl; );
+		merge(node, neighbor, neighborEdge);
+		return TRUE;
+	    }
+	    node.advanceNeighbors();
 	}
-	node.advanceNeighbors();
+    }
+@
+At the very least, we need to increment the label of the node by one.  However,
+we'd like to increase it by more, up to its distance.
+<<increase node label>>=
+    if (node.distance > 0) {
+	NodeLabel newLabel = max(label + 1, node.distance);
+	if (node.getNumChildren() >= 0) {
+	    // else scan children
+	    ElIterator it = node.getChildren();
+	    for (EdgePtr edge = it.getNext(); edge != nil; edge=it.getNext()) {
+		newLabel = min(edge->getOtherNode(&node)->getLabel(), newLabel);
+	    }
+	    assert(newLabel > label);
+	}
+	//incrementLabel(node);
+	setLabel(node, newLabel);
+	STATS(numRelabels++);		// should have num skips
+    } else {
+	incrementLabel(node);
+	STATS(numRelabels++);
     }
 @
 This is some debug/assertion code to verify that we haven't missed
@@ -2183,6 +2205,7 @@ labeled.
     if ((neighbor.getExcess() == 0) && (residCap > 0)) {
 	if (neighbor.getLabel() > dist) {
 	    neighbor.setLabel(dist);
+	    neighbor.distance = dist;
 	    putNodeQ(neighbor);
 	    nodep->addChild(neighbor, *edgep);
 	} else if ((neighbor.getLabel() == dist) &&
@@ -2331,7 +2354,7 @@ void PhaseSolver::globalRelabel()
 {
     STATS(numGlobalRelabels++);
     TRACE( trout << "Begin global relabeling.  Lowest label: " << lowestLabel << endl; );
-    <<set initial distance>>
+    <<set initial distance labels>>
     <<search backwards from the sink labeling nodes>>
     <<relabel/remove each branch>>
     IFDEBUG( checkBranches(); )
