@@ -6,6 +6,12 @@
 #include <time.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef NEED_GETOPT
+#include <getopt.h>
+#endif /*NEED_GETOPT*/
+
+// set to TRUE to cause (time consuming) tree checks to take place
+Boolean checkTree = FALSE;
 
 void 
 usage()
@@ -13,6 +19,7 @@ usage()
     cerr << "Usage: pllps [-d] [-f] [-I init] [-N norm] [-B branch] input-graph flow-output" << endl;
     cerr << "\t -d   dump the final disposition of each node" << endl;
     cerr << "\t -f   write the flow values for each arc" << endl;
+    cerr << "\t -t   perform checkTree operations frequently" << endl;
     cerr << "\t -I   initialization function: simple, path, saturate, greedy " << endl;
     cerr << "\t -s   specify the number of splits for path init" << endl;
     cerr << "\t -B   strong bucket management: fifo, lifo, wave" << endl;
@@ -63,13 +70,16 @@ main(int argc, char** argv)
 
     // parse arguments
     int ch;
-    while ((ch = getopt(argc, argv, "dfL:I:s:M:N:B:O:")) != EOF) {
+    while ((ch = getopt(argc, argv, "dftL:I:s:M:N:B:O:")) != EOF) {
 	switch (ch) {
 	case 'd':
 	    dumpNodes = TRUE;
 	    break;
 	case 'f':
 	    writeFlow = TRUE;
+	    break;
+	case 't':
+	    checkTree = TRUE;
 	    break;
 	case 'L':
 	    lambdaValues = getLambdas(numLambdas, optarg);
