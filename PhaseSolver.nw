@@ -379,20 +379,20 @@ simple class.
 {\em Note: using a bucket class instead of separate head and
 tail pointers seemed to case a performance hit of about
 1.7% - cher.20.20 w/o buckets = 35.7, with buckets =36.3 seconds.}
-<<Bucket data>>=
+<<Node Bucket data>>=
 private:
     NodePtr	head;
     NodePtr	tail;
-<<Bucket methods>>=
+<<Node Bucket methods>>=
 public:
     void 	insertHead(Node& root);
     void	insertTail(Node& root);
     NodePtr	removeHead();
 @
 We will always implement these as inline functions:
-<<Bucket inline implementations>>=
+<<Node Bucket inline implementations>>=
 inline void 
-Bucket::insertHead(Node& root)
+NodeBucket::insertHead(Node& root)
 {
     if (head == nil) {
 	root.setNextNil();
@@ -407,7 +407,7 @@ Bucket::insertHead(Node& root)
 }
 #ifdef LIFO_BUCKETS
 inline void 
-Bucket::insertTail(Node& root)
+NodeBucket::insertTail(Node& root)
 {
     if (head == nil) {
 	root.setNextNil();
@@ -421,7 +421,7 @@ Bucket::insertTail(Node& root)
 }
 #endif /* LIFO_BUCKETS */
 inline NodePtr
-Bucket::removeHead()
+NodeBucket::removeHead()
 {
     NodePtr result = nil;
     if (head != nil) {
@@ -439,7 +439,7 @@ Bucket::removeHead()
 @ %def insertHead insertTail removeHead
 
 <<Solver data>>=
-    Bucket*	buckets;
+    NodeBucket*	buckets;
 <<default Solver constructor>>=
     buckets = nil;
 @ %def buckets
@@ -1006,7 +1006,7 @@ allocate an extra node (node zero), that never really gets used.
     }
     nodes = new Node[numNodes + 1];
     edges = new Edge[numEdges];
-    buckets = new Bucket[numNodes + 1];
+    buckets = new NodeBucket[numNodes + 1];
     nodeDegrees = new int[numNodes + 1];
     labelCount = new int[numNodes + 1];
 
@@ -1188,7 +1188,7 @@ data, and inline functions.  Again, we have more boiler-plate.
 
 class PhaseSolver;
 typedef void (PhaseSolver::* AddBranchPtr)(Node&);
-<<Bucket definition>>
+<<Node Bucket definition>>
 
 class PhaseSolver 
 {
@@ -1211,13 +1211,13 @@ also define them here in the header file.
 #endif /*SOLVER_H*/
 @
 And finally, let's fill out the definition for Node Buckets.
-<<Bucket definition>>=
-class Bucket
+<<Node Bucket definition>>=
+class NodeBucket
 {
-    public: Bucket() { head = tail = nil; }
-    <<Bucket methods>>
-    <<Bucket data>>
+    public: NodeBucket() { head = tail = nil; }
+    <<Node Bucket methods>>
+    <<Node Bucket data>>
 };
 
-<<Bucket inline implementations>>
+<<Node Bucket inline implementations>>
 
