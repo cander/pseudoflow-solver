@@ -84,6 +84,7 @@ The parent edge is [[nil]] if the node is a root.
     NodePtr	getParentNode();
     Boolean	isRootNode() const;
     FlowAmount  getParentCapacity() const;
+    FlowAmount  getParentDownCapacity() const;
 <<Node inline implementations>>=
 INLINE EdgePtr Node::getParentEdge() const
 { return parentEdge; }
@@ -93,7 +94,9 @@ INLINE Boolean Node::isRootNode() const
 { return (parentEdge == nil) ? TRUE : FALSE; }
 INLINE FlowAmount Node::getParentCapacity() const
 { return parentEdge->residCapacity(); }
-@ %def getParentEdge getParentNode isRootNode
+INLINE FlowAmount Node::getParentDownCapacity() const
+{ return parentEdge->residCapacity(*parentNode); }
+@ %def getParentEdge getParentNode isRootNode getParentCapacity getParentDownCapacity
 Adding a child is a more involved process than adding a neighbor
 because we have to update the parent edge.  We begin by adding
 the child to the parent's list of children.  
@@ -122,6 +125,24 @@ void Node::addChild(Node& child, Edge& edge)
     child.parentNode = this;
 }
 @ %def addChild
+To support the simplex iterations, we also need to be able
+to add a degenerate sub-tree as a child.  In this case, its label
+will be less than or equal to ours, and we need to add it after
+the current child index to have it scan when we process this node
+next.
+<<Node methods>>=
+    void addWeakChild(Node& child, Edge& edge);
+<<Node method implementations>>=
+void Node::addWeakChild(Node& child, Edge& edge)
+{
+    assert(edge.validateEdge(*this, child));
+    assert(child.label <= label);
+    children.addAfterCurrent(&edge);
+    edge.setDirectionTo(this);
+    child.parentEdge = &edge;
+    child.parentNode = this;
+}
+@ %def addWeakChild
 We need methods to iterate over the neighbors and children.  These
 are basically simple pass-through functions for the underlying lists
 of edges. 
@@ -190,8 +211,7 @@ void Node::split()
 @ %def split
 Rehanging a tree from a node involves reversing the
 parent-child relationship between nodes along the
-path from the new root node up to the existing
-root.  
+path from the new root node up to the existing root.  
 
 At the center of the parent-child relationship is the edge between
 the parent and child.  This is the [[parentEdge]] in the current
@@ -220,7 +240,6 @@ along the path to get to a node that we are going to rehang by.
 For a given node, $v$, we know that $v$ must be the current node
 in the children array of the parent of $v$.  This makes it simple
 and fast to find $v$ in its parent's children array.
-
 <<Node methods>>=
     NodePtr rehang();
 <<Node method implementations>>=
@@ -236,7 +255,9 @@ NodePtr Node::rehang()
 	parentNode = nil;
 
 	while (parNode != nil) {
-	    assert(currNode->label == parNode->label);
+	    // assert(currNode->label == parNode->label);
+	    // XXX - broke this assertion for simplex
+	    assert(currNode->label <= parNode->label);
 	    assert(parNode != currNode);
 	    EdgePtr nextEdge = parNode->getParentEdge();
 
@@ -262,6 +283,59 @@ NodePtr Node::rehang()
     return oldRoot;
 }
 @ %def rehang
+The code to rehang a branch above assumes that we are rehanging a
+strong branch.  This is usually the case for the pseduoflow
+algorithm, but the simplex variant also need to rehang a weak 
+branch.  Therefore, we have a nearly identical version of the 
+method except that it manipulates the [[children]] arrays 
+differently because we cannot assume that we are inverting along
+the path defined by the current element cursors.
+Also, with simplex and rehanging weak branches, we can't make
+many assumptions about the labels of the nodes involved, so we
+don't assert the labels.
+<<Node methods>>=
+    NodePtr rehangWeak();
+<<Node method implementations>>=
+NodePtr Node::rehangWeak()
+{
+    NodePtr oldRoot = nil;
+
+    if (parentEdge != nil) {
+	NodePtr currNode = this;
+	EdgePtr edge = parentEdge;
+	NodePtr parNode = getParentNode();
+	parentEdge = nil;
+	parentNode = nil;
+
+	while (parNode != nil) {
+	    //assert(currNode->label >= parNode->label);
+	    assert(parNode != currNode);
+	    EdgePtr nextEdge = parNode->getParentEdge();
+
+	    parNode->children.removeElement(edge);
+	    parNode->parentEdge = edge;
+	    parNode->parentNode = currNode;
+	    // maybe just addHole & reset??
+	    currNode->children.addAfterCurrent(edge);
+	    edge->toggleOrientation();
+
+	    if (nextEdge != nil) {
+		currNode = parNode;
+		edge = nextEdge;
+		parNode = edge->getOtherNode(currNode);
+	    } else {
+		oldRoot = parNode;
+		break;
+	    }
+	}
+    } else {
+	oldRoot = this;
+    }
+
+    return oldRoot;
+}
+@ %def rehang
+
 In addition to the tree structure and a Node's neighbors, we need
 to build a linked list of nodes for use by the solver.  This
 is a simple, singly-linked list with one pointer to the next
@@ -393,6 +467,26 @@ public:
     int flag;
 <<default Node constructor>>=
     flag = 0;
+<<Node methods>>=
+    void setFlag(int f) { flag |= f; }
+    void clearFlag(int f) { flag &= ~f; }
+    Boolean flagIsSet(int f) { return (flag & f) ? TRUE : FALSE; }
+    void clearFlagPath(int f, NodePtr end);
+@
+This function clear a flag value along a path of parent pointers.
+<<Node inline implementations>>=
+INLINE void Node::clearFlagPath(int f, NodePtr end)
+{
+    NodePtr currNode = this;
+    while (currNode != end) {
+	assert(currNode != nil);
+	currNode->clearFlag(f);
+	currNode = currNode->getParentNode();
+    }
+    if (end != nil) {
+	end->clearFlag(f);
+    }
+}
 @ init
 \subsection{Debugging}
 To aid in debugging the tree and graph manipulation functions,
@@ -405,7 +499,7 @@ void Node::printTree(int level)
 {
     if (level == 0) {
 	cout << " Node id   address   level   label  parent res-cap "
-	     << " excess" << endl;
+	     << " excess   flags" << endl;
     }
 
     cout << setw(8) << id << "   "
@@ -422,7 +516,7 @@ void Node::printTree(int level)
 	cout << setw(8) << getParentEdge()->residCapacity(*this);
     }
 
-    cout << setw(8) << excess << endl;
+    cout << setw(8) << excess << setw(8) << flag << endl;
 
     // examine children
     int numChildren = children.getSize();
@@ -463,6 +557,7 @@ Boolean Node::checkTree(EdgePtr expectedParentEdge)
     if (treeOK) {
 	<<check child pointers>>
     }
+    <<check label and excess>>
 
     return treeOK;
 }
@@ -508,6 +603,21 @@ and check each of them in turn.  We must skip holes in the list
 	    if (treeOK == FALSE) {
 		break;
 	    }
+	}
+    }
+@
+<<check label and excess>>=
+    if (treeOK && parentNode != nil) {
+	if (excess < 0) {
+	    cout << "\nWarning: node " << id 
+	         << " non-zero excess in non-root node " 
+		 << excess << endl;
+	    treeOK = FALSE;
+	}
+	else if ((label < parentNode->label) && (flag == 0)) {
+	    cout << "\nError: node " << id 
+		 << " label inversion for non-degenerate node" << endl;
+	    treeOK = FALSE;
 	}
     }
 @
