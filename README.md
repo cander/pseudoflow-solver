@@ -11,7 +11,7 @@ The code is built with the following tools:
 * <a href="http://gcc.gnu.org"> g++</a>: This compiles under versions 2.7-2.9 of g++ on <a
   href="http://www.freebsd.org">FreeBSD</a>,  <a href="http://www.sun.com">Solaris</a>, and <a href="http://sources.redhat.com/cygwin"> Cygwin</a>.
 * <a href="http://www.gnu.org/software/make/make.html"> gmake</a> - other make tools will probably work, but I've only used gmake</li>
-* <a href="http://www.eecs.harvard.edu/~nr/noweb/">noweb</a>: The code is written using the noweb literate programming tool. The distribution contains up-to-date C++ source files, so if you just want to compile and run the programs, you can do so without noweb. Likewise, the Latex and PostScript is up-to-date, so you don't need to build them from the sources via noweb.</li>
+* <a href="http://www.eecs.harvard.edu/~nr/noweb/">noweb</a>: The code is written using the noweb literate programming tool. noweb generates the C++ source files and the Latex documentation.  *(Unfortunuately, I don't have generated versions of these files available, so you'll have to get noweb running.)*
 * latex: To format the literate program documentation
 
 ## Installation Instructions
