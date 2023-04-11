@@ -128,6 +128,9 @@ xdvi:	doc.tex allcode.tex
 doc.ps: doc.dvi
 	dvips -o doc.ps doc.dvi
 
+doc.pdf: doc.dvi
+	dvipdfm -p letter -o doc.pdf doc.dvi
+
 twoup.ps: doc.ps
 	# psselect -r doc.ps | psnup -2 -pletter > twoup.ps
 	cat doc.ps | psnup -2 -pletter > twoup.ps
