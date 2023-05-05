@@ -1,3 +1,4 @@
+site.mk
 allcode.tex
 doc.aux
 doc.dvi
@@ -6,3 +7,20 @@ doc.pdf
 doc.ps
 doc.tex
 doc.toc
+*.o
+buildinfo.*
+Edge.C
+Edge.h
+EdgeList.C
+EdgeList.h
+Node.C
+Node.h
+PhaseSolver.C
+PhaseSolver.h
+libpsa.a
+llps
+llps.C
+gpps
+gpps.C
+pllps
+pllps.C

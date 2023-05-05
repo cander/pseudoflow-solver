@@ -192,7 +192,7 @@ is defined by two parameters, $a$ and $b$.
 <<Edge methods>>=
 #ifdef PARAM_SENSE
     void init(Node& src, Node& dst, FlowAmount aParam, double bParam);
-#endif PARAM_SENSE
+#endif /*PARAM_SENSE*/
 <<Edge method implementations>>=
 #ifdef PARAM_SENSE
 void Edge::init(Node& src, Node& dst, FlowAmount _aParam, double _bParam)
@@ -205,7 +205,7 @@ void Edge::init(Node& src, Node& dst, FlowAmount _aParam, double _bParam)
     aParam = _aParam;
     bParam = _bParam;
 }
-#endif PARAM_SENSE
+#endif /*PARAM_SENSE*/
 @ 
 At the begining of the algorithm, we need to saturate the
 source- and sink-adjacent edges.
@@ -234,7 +234,7 @@ than a sub-class.
 #ifdef PARAM_SENSE
     FlowAmount aParam;
     double      bParam;
-#endif PARAM_SENSE
+#endif /*PARAM_SENSE*/
 @
 We set the initial capacity based on the initial value of lambda.  Because
 we take the absolute value of the the capacity, we need to signal the 
@@ -249,7 +249,7 @@ bool Edge::setInitialCapacity(double lambda)
     FlowAmount newCapacity = (FlowAmount)(aParam + bParam * lambda);
     negative = (newCapacity < 0) ? true : false;
     capacity = iabs(newCapacity);
-#endif PARAM_SENSE
+#endif /*PARAM_SENSE*/
 
     return negative;
 }
@@ -284,7 +284,7 @@ INLINE bool Edge::increaseLambda(double oldLambda,
     delta = newCapacity - oldCapacity;
     capacity = iabs(newCapacity);
     crossedZero = ((oldCapacity < 0) && (newCapacity >= 0)) ? true : false;
-#endif PARAM_SENSE
+#endif /*PARAM_SENSE*/
 
     return crossedZero;
 }

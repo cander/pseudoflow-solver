@@ -13,8 +13,8 @@ something to be desired.
 <<common declarations>>
 
 <<common declarations>>=
-#include <iostream.h>
-#include <fstream.h>
+#include <iostream>
+#include <fstream>
 #include <time.h>
 #include <stdlib.h>
 #include <string.h>
@@ -736,9 +736,9 @@ we just perform subtraction.
 void 
 Timer::getTimes(float& wall, float& user, float& sys) const
 {
-    wall = (stopWall - startWall) / (float)CLK_TCK;
-    user = (stopCpu.tms_utime - startCpu.tms_utime) / (float)CLK_TCK;
-    sys  = (stopCpu.tms_stime - startCpu.tms_stime) / (float)CLK_TCK;
+    wall = (stopWall - startWall) / (float)CLOCKS_PER_SEC;
+    user = (stopCpu.tms_utime - startCpu.tms_utime) / (float)CLOCKS_PER_SEC;
+    sys  = (stopCpu.tms_stime - startCpu.tms_stime) / (float)CLOCKS_PER_SEC;
 }
 @ %def getTimes
 We also want to implement an [[operator<<]], to print the
@@ -786,7 +786,7 @@ Timer::Timer()
 <<Timer declaration and implementation>>=
 #include <time.h>
 #include <sys/times.h>
-#include <iostream.h>
+#include <iostream>
 class Timer
 {
     <<Timer functions>>

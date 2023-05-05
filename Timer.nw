@@ -19,6 +19,7 @@ private:
     clock_t		stopWall;
 @ %def startCpu startWall stopCpu stopWall    
 <<header include files>>=
+#include <time.h>
 #include <sys/times.h>
 @
 To start or stop a timer, we use the [[times(2)]], at least
@@ -41,9 +42,9 @@ we just perform subtraction.
 void 
 Timer::getTimes(float& wall, float& user, float& sys) const
 {
-    wall = (stopWall - startWall) / (float)CLK_TCK;
-    user = (stopCpu.tms_utime - startCpu.tms_utime) / (float)CLK_TCK;
-    sys  = (stopCpu.tms_stime - startCpu.tms_stime) / (float)CLK_TCK;
+    wall = (stopWall - startWall) / (float)CLOCKS_PER_SEC;
+    user = (stopCpu.tms_utime - startCpu.tms_utime) / (float)CLOCKS_PER_SEC;
+    sys  = (stopCpu.tms_stime - startCpu.tms_stime) / (float)CLOCKS_PER_SEC;
 }
 @ %def getTimes
 We also want to implement an [[operator<<]], to print the
@@ -80,7 +81,7 @@ Boiler-plate for the implementation file.
 <<*>>=
 #include "Timer.h"
 #include <time.h>
-#include <iostream.h>
+#include <iostream>
 <<Timer implementation>>
 @
 Boiler-plate for the header file.
