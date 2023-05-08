@@ -1,0 +1,7 @@
+doc.*
+*.o
+*.a
+*.pdf
+*llps
+gpps
+

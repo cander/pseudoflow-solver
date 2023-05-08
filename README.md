@@ -12,10 +12,11 @@ great detail how it all works.
 *Note: I developed this code over 20 years ago when I was working on my
 dissertation.  The code originally compiled under g++ 2.7. Later, I
 updated it for version 3.2, and in 2023, I made more changes to compile
-under g++ 4.4. However, I haven't run the code in nearly 20 years - I don't
+under g++ 4.4. I've included a `Dockerfile` for the environment I built to
+compile the code and generate documentation under Ubuntu 10.04 (very old).
+However, I haven't run the code in nearly 20 years - I don't
 know if it still works.
-I've open-sourced it in case it's of use to someone else.
-I hope to publish a `Dockerfile` for the tool chain, someday.*
+I've open-sourced it in case it's of use to someone else.*
 
 ## Prerequisites
 The code is built with the following tools:
@@ -24,6 +25,9 @@ The code is built with the following tools:
 * <a href="http://www.gnu.org/software/make/make.html"> gmake</a> - other make tools will probably work, but I've only used gmake</li>
 * <a href="http://www.eecs.harvard.edu/~nr/noweb/">noweb</a>: The code is written using the noweb literate programming tool. noweb generates the C++ source files and the Latex documentation.
 * [Latex:](http://www.latex-project.org/) To format the literate program documentation
+
+All of these are available in Docker using the `Dockerfile` provided.
+Although it creates an Intel/AMD image, it runs fine on an M1 Mac.
 
 ## Installation Instructions
 Edit <tt>site.mk</tt> to adjust the compile flags as needed as explained in the
@@ -46,5 +50,5 @@ Invoking the programs without arguments will cause a usage message to be printed
 The input and output files are in the [Dimacs format](http://lpsolve.sourceforge.net/5.5/DIMACS_maxf.htm).
 
 ---
-Last Updated: 5 May 2023<br>
+Last Updated: 8 May 2023<br>
 Last Real Update: September 2003
